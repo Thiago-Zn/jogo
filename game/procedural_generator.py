@@ -64,7 +64,21 @@ class ProceduralGenerator:
         # Pool de chunks reciclados (otimização de memória)
         self.chunk_pool = []
         self.max_pool_size = 50
-        
+
+    def _extrair_limites_camera(self, camera_view):
+        """Converte uma posição de câmera em limites superior e inferior."""
+
+        if hasattr(camera_view, 'top'):
+            top = float(camera_view.top)
+            bottom = float(camera_view.bottom)
+            height = float(camera_view.height)
+        else:
+            top = float(camera_view)
+            height = float(config.ALTURA_TELA)
+            bottom = top + height
+
+        return top, bottom, height
+
     def deve_gerar_area_descanso(self):
         """
         Verifica se deve gerar uma área de descanso
@@ -497,15 +511,14 @@ class ProceduralGenerator:
                 self.ultimo_tipo = 'rio'
                 return chunk
     
-    def atualizar(self, camera_offset):
+    def atualizar(self, camera_view):
         """
         Atualiza o gerador (remove chunks antigos, gera novos)
 
         Args:
-            camera_offset: Offset atual da câmera
+            camera_view: Offset da câmera ou retângulo visível
         """
-        # Atualizar distância percorrida (quanto mais alto, maior a distância)
-        self.distancia_percorrida = max(0, -camera_offset)
+        camera_top, camera_bottom, _ = self._extrair_limites_camera(camera_view)
 
         # Remover chunks que saíram da tela (atrás da câmera, abaixo do jogador)
         # Usar margem maior para cleanup mais agressivo
@@ -514,7 +527,7 @@ class ProceduralGenerator:
         chunks_para_manter = []
 
         for c in self.chunks:
-            if c.y_inicio < camera_offset + config.ALTURA_TELA + margem_cleanup:
+            if c.y_inicio < camera_bottom + margem_cleanup:
                 chunks_para_manter.append(c)
             else:
                 chunks_para_remover.append(c)
@@ -529,13 +542,15 @@ class ProceduralGenerator:
         self.chunks = chunks_para_manter
 
         # Remover safe zones antigas com mesma margem
-        self.safe_zones = [sz for sz in self.safe_zones
-                          if sz.y_pos < camera_offset + config.ALTURA_TELA + margem_cleanup]
-        
+        self.safe_zones = [
+            sz for sz in self.safe_zones
+            if sz.y_pos < camera_bottom + margem_cleanup
+        ]
+
         # Gerar novos chunks à frente se necessário
         # O jogador vai "subir" (Y diminui), então geramos chunks com Y menor
-        limite_geracao = camera_offset - config.DISTANCIA_GERACAO_CHUNK
-        
+        limite_geracao = camera_top - config.DISTANCIA_GERACAO_CHUNK
+
         chunks_gerados = 0
         while self.proximo_y > limite_geracao and chunks_gerados < 50:
             # Gerar chunk acima (Y menor)
@@ -548,7 +563,7 @@ class ProceduralGenerator:
         
         # Atualizar dificuldade baseado na distância percorrida
         # Quanto mais o jogador sobe (Y diminui), maior a dificuldade
-        progresso = max(0, config.ALTURA_TELA - camera_offset)
+        progresso = max(0, config.ALTURA_TELA - camera_top)
         self.distancia_percorrida = progresso
 
         # Dificuldade com limite máximo (evita velocidades impossíveis)
@@ -556,85 +571,89 @@ class ProceduralGenerator:
         # Limitar dificuldade máxima a 2.5x (configurável em config.py)
         dificuldade_max = getattr(config, 'DIFICULDADE_MAXIMA', 2.5)
         self.dificuldade_atual = min(dificuldade_base, dificuldade_max)
-    
-    def obter_faixas_visiveis(self, camera_offset):
+
+    def obter_faixas_visiveis(self, camera_view):
         """
         Retorna as faixas visíveis na tela
-        
+
         Args:
-            camera_offset: Offset da câmera
-            
+            camera_view: Offset da câmera ou retângulo visível
+
         Returns:
             list: Lista de faixas visíveis
         """
+        camera_top, camera_bottom, _ = self._extrair_limites_camera(camera_view)
         faixas_visiveis = []
-        
-        y_min = camera_offset - 100
-        y_max = camera_offset + config.ALTURA_TELA + 100
-        
+
+        y_min = camera_top - 100
+        y_max = camera_bottom + 100
+
         for chunk in self.chunks:
             if chunk.tipo == 'estrada':
                 # Verificar se chunk está visível
                 if chunk.y_inicio <= y_max and chunk.y_fim >= y_min:
                     faixas_visiveis.extend(chunk.dados.get('faixas', []))
-        
+
         return faixas_visiveis
-    
-    def obter_safe_zones_visiveis(self, camera_offset):
+
+    def obter_safe_zones_visiveis(self, camera_view):
         """
         Retorna as safe zones visíveis
-        
+
         Args:
-            camera_offset: Offset da câmera
-            
+            camera_view: Offset da câmera ou retângulo visível
+
         Returns:
             list: Lista de SafeZones visíveis
         """
-        y_min = camera_offset
-        y_max = camera_offset + config.ALTURA_TELA
-        
+        camera_top, camera_bottom, _ = self._extrair_limites_camera(camera_view)
+        y_min = camera_top
+        y_max = camera_bottom
+
         visiveis = []
         for sz in self.safe_zones:
             if sz.y_pos <= y_max and sz.y_pos + sz.altura >= y_min:
                 visiveis.append(sz)
-        
+
         return visiveis
-    
-    def obter_plataformas_visiveis(self, camera_offset):
+
+    def obter_plataformas_visiveis(self, camera_view):
         """
         Retorna as plataformas do rio visíveis
-        
+
         Args:
-            camera_offset: Offset da câmera
-            
+            camera_view: Offset da câmera ou retângulo visível
+
         Returns:
             list: Lista de plataformas (apenas Tronco)
         """
-        y_min = camera_offset - 100
-        y_max = camera_offset + config.ALTURA_TELA + 100
-        
+        camera_top, camera_bottom, _ = self._extrair_limites_camera(camera_view)
+        y_min = camera_top - 100
+        y_max = camera_bottom + 100
+
         plataformas = []
         for chunk in self.chunks:
             if chunk.tipo == 'rio':
                 # Verificar se chunk está visível
                 if chunk.y_inicio <= y_max and chunk.y_fim >= y_min:
                     plataformas.extend(chunk.dados.get('plataformas', []))
-        
+
         return plataformas
-    
-    def obter_chunks_visiveis(self, camera_offset):
+
+    def obter_chunks_visiveis(self, camera_view):
         """
         Retorna todos os chunks visíveis
-        
+
         Args:
-            camera_offset: Offset da câmera
-            
+            camera_view: Offset da câmera ou retângulo visível
+
         Returns:
             list: Lista de chunks visíveis
         """
-        y_min = camera_offset - 100
-        y_max = camera_offset + config.ALTURA_TELA + 100
-        
+        camera_top, camera_bottom, _ = self._extrair_limites_camera(camera_view)
+        y_min = camera_top - 100
+        y_max = camera_bottom + 100
+
         visiveis = []
         for chunk in self.chunks:
             if chunk.y_inicio <= y_max and chunk.y_fim >= y_min:
