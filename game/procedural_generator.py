@@ -36,7 +36,7 @@ class Chunk:
 
 class ProceduralGenerator:
     """Gerenciador de geração procedimental"""
-    
+
     def __init__(self, seed=None):
         """
         Inicializa o gerador procedimental
@@ -64,6 +64,15 @@ class ProceduralGenerator:
         # Pool de chunks reciclados (otimização de memória)
         self.chunk_pool = []
         self.max_pool_size = 50
+
+    def _liberar_recursos_chunk(self, chunk):
+        """Libera recursos associados a um chunk antes de reciclá-lo."""
+        if chunk.tipo == 'rio':
+            plataformas = chunk.dados.get('plataformas', [])
+            for plataforma in plataformas:
+                if hasattr(plataforma, 'release'):
+                    plataforma.release()
+            chunk.dados['plataformas'] = []
         
     def deve_gerar_area_descanso(self):
         """
@@ -210,7 +219,7 @@ class ProceduralGenerator:
                 
                 # GARANTIR pelo menos UM tronco grande no centro (múltiplo de TAMANHO_CELL)
                 largura_central = 6 * config.TAMANHO_CELL  # 192px = 6 células
-                tronco_central = Tronco(centro_tela, y_faixa, largura_central, velocidade, direcao)
+                tronco_central = Tronco.from_pool(centro_tela, y_faixa, largura_central, velocidade, direcao)
                 plataformas.append(tronco_central)
                 
                 # Gerar outros troncos ao redor (ALINHADOS AO GRID)
@@ -232,7 +241,7 @@ class ProceduralGenerator:
                         4 * config.TAMANHO_CELL,  # 128px
                         6 * config.TAMANHO_CELL   # 192px
                     ])
-                    tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
+                    tronco = Tronco.from_pool(x_base, y_faixa, largura, velocidade, direcao)
                     plataformas.append(tronco)
             
             elif tipo_plataforma == 'tronco':
@@ -271,7 +280,7 @@ class ProceduralGenerator:
                         x_base = largura // 2
                         x_base = (x_base // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                     
-                    tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
+                    tronco = Tronco.from_pool(x_base, y_faixa, largura, velocidade, direcao)
                     plataformas.append(tronco)
             
             # Tipo 'misto' removido - apenas troncos agora
@@ -479,7 +488,7 @@ class ProceduralGenerator:
                             x_base = largura // 2
                             x_base = (x_base // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                         
-                        tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
+                        tronco = Tronco.from_pool(x_base, y_faixa, largura, velocidade, direcao)
                         plataformas.append(tronco)
                 
                 chunk = Chunk(
@@ -521,6 +530,7 @@ class ProceduralGenerator:
 
         # Reciclar chunks removidos no pool (otimização de memória)
         for chunk in chunks_para_remover:
+            self._liberar_recursos_chunk(chunk)
             if len(self.chunk_pool) < self.max_pool_size:
                 # Limpar dados do chunk antes de adicionar ao pool
                 chunk.dados.clear()
@@ -644,6 +654,8 @@ class ProceduralGenerator:
     
     def resetar(self):
         """Reseta o gerador para estado inicial"""
+        for chunk in self.chunks:
+            self._liberar_recursos_chunk(chunk)
         self.chunks = []
         self.safe_zones = []
         self.proximo_y = 0

@@ -106,13 +106,38 @@ class Camera:
     def obter_area_visivel(self):
         """
         Retorna a área visível do mundo (coordenadas Y)
-        
+
         Returns:
             tuple: (y_superior, y_inferior) em coordenadas do mundo
         """
         y_superior = self.obter_y_mundo(0)
         y_inferior = self.obter_y_mundo(config.ALTURA_TELA)
         return (y_superior, y_inferior)
+
+    def get_world_view_rect(self, padding=0):
+        """Retorna um retângulo do mundo correspondente à área visível da câmera."""
+        altura_padding = padding * 2
+        y_superior, y_inferior = self.obter_area_visivel()
+        altura = (y_inferior - y_superior) + altura_padding
+        y_inicio = y_superior - padding
+        return pygame.Rect(-padding, y_inicio, config.LARGURA_TELA + padding * 2, altura)
+
+    def rect_intersects_view(self, rect, padding=0):
+        """Verifica se um retângulo do mundo cruza a área visível (com margem)."""
+        return self.get_world_view_rect(padding).colliderect(rect)
+
+    def world_to_screen(self, rect_or_pos):
+        """Converte coordenadas do mundo para a tela, preservando tipos básicos."""
+        if isinstance(rect_or_pos, pygame.Rect):
+            novo = rect_or_pos.copy()
+            novo.y -= int(self.offset_y)
+            return novo
+
+        if isinstance(rect_or_pos, (tuple, list)) and len(rect_or_pos) >= 2:
+            x, y = rect_or_pos[:2]
+            return (int(x), int(y - self.offset_y))
+
+        raise TypeError("world_to_screen aceita pygame.Rect ou tuplas (x, y)")
     
     def resetar(self):
         """Reseta a câmera para posição inicial - AJUSTADO PARA GRID 32px"""

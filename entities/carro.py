@@ -9,20 +9,45 @@ import config
 class Carro(pygame.sprite.Sprite):
     """Classe que representa um carro obstáculo"""
 
+    _pool = []
+
     def __init__(self, x, y, velocidade, cor, direcao=1):
         super().__init__()
-        
+
         # Criar surface para o sprite
         self.image = pygame.Surface((config.TAMANHO_CARRO_LARGURA, config.TAMANHO_CARRO_ALTURA), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
-        self.rect.centerx = x
-        self.rect.centery = y
-        
+
         self.velocidade = velocidade
         self.cor = cor
         self.direcao = direcao  # 1 = direita, -1 = esquerda
-        
-        # Desenhar o carro
+
+        # Posicionar e desenhar o carro
+        self.resetar(x, y, velocidade, cor, direcao)
+
+    @classmethod
+    def from_pool(cls, x, y, velocidade, cor, direcao=1):
+        """Obtém um carro reutilizando um sprite existente quando possível."""
+        if cls._pool:
+            carro = cls._pool.pop()
+            carro.resetar(x, y, velocidade, cor, direcao)
+            return carro
+        return cls(x, y, velocidade, cor, direcao)
+
+    def release(self):
+        """Remove o sprite dos grupos e o devolve ao pool."""
+        self.kill()
+        Carro._pool.append(self)
+
+    def resetar(self, x, y, velocidade, cor, direcao=1):
+        """Reconfigura o sprite para reutilização."""
+        self.velocidade = velocidade
+        self.cor = cor
+        self.direcao = direcao
+        self.rect.centerx = x
+        self.rect.centery = y
+
+        # Redesenhar o carro com as novas propriedades
         self.desenhar()
 
     def desenhar(self):
