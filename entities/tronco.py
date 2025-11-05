@@ -24,13 +24,20 @@ class Tronco(pygame.sprite.Sprite):
         
         self.largura = largura  # Já é múltiplo de 32 (96, 128, 160, 192)
         self.altura = 32  # 1 célula (32px) - alinhado ao grid
-        self.velocidade = velocidade
+        # Velocidade base (valor recebido representa deslocamento por frame a 60 FPS)
+        self.velocidade = float(velocidade)
         self.direcao = direcao
+        # Velocidade exposta em unidades (pixels) por segundo - útil para física compartilhada
+        self.velocidade_por_segundo = self.velocidade * 60.0
+
+        # Controle de posição contínua e deslocamento do último frame (para carregar jogador)
+        self._pos_x = float(x)
+        self.deslocamento_ultimo_passo = 0.0
         
         # Criar surface
         self.image = pygame.Surface((self.largura, self.altura), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
-        self.rect.centerx = x
+        self.rect.centerx = int(round(self._pos_x))
         self.rect.centery = y
         
         # Desenhar o tronco
@@ -114,10 +121,21 @@ class Tronco(pygame.sprite.Sprite):
             delta_time: Tempo desde o último frame (em segundos)
         """
         # Movimento baseado em velocidade em pixels por segundo
-        self.rect.centerx += int(self.velocidade * self.direcao * 60 * delta_time)
+        # Calcular deslocamento contínuo e armazenar para transporte do jogador
+        deslocamento = self.velocidade_por_segundo * self.direcao * delta_time
+        self.deslocamento_ultimo_passo = deslocamento
+        self._pos_x += deslocamento
+        self.rect.centerx = int(round(self._pos_x))
 
         # Reposiciona quando sai da tela
         if self.direcao == 1 and self.rect.left > config.LARGURA_TELA:
             self.rect.right = -self.largura
+            self._pos_x = float(self.rect.centerx)
         elif self.direcao == -1 and self.rect.right < 0:
             self.rect.left = config.LARGURA_TELA + self.largura
+            self._pos_x = float(self.rect.centerx)
+
+    @property
+    def velocidade_horizontal(self):
+        """Velocidade horizontal assinada em pixels por segundo."""
+        return self.velocidade_por_segundo * self.direcao
