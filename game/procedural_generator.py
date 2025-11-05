@@ -2,6 +2,7 @@
 Sistema de Geração Procedimental
 """
 
+import json
 import random
 import pygame
 import config
@@ -47,6 +48,16 @@ class ProceduralGenerator:
         if seed:
             random.seed(seed)
 
+        # Configurações externas de faixas
+        self.use_lane_config = getattr(config, 'USE_LANE_CONFIG', False)
+        self.lane_config = []
+        self.road_lane_defs = []
+        self.river_lane_defs = []
+        self.road_lane_index = 0
+        self.river_lane_index = 0
+        if self.use_lane_config:
+            self._carregar_lane_config()
+
         # Lista de chunks ativos
         self.chunks = []
         self.safe_zones = []
@@ -64,6 +75,88 @@ class ProceduralGenerator:
         # Pool de chunks reciclados (otimização de memória)
         self.chunk_pool = []
         self.max_pool_size = 50
+
+    def _carregar_lane_config(self):
+        """Carrega definições de faixas a partir de arquivo JSON."""
+        caminho = getattr(config, 'LANE_CONFIG_PATH', None)
+        if not caminho:
+            self.use_lane_config = False
+            return
+
+        try:
+            with open(caminho, 'r', encoding='utf-8') as arquivo:
+                dados = json.load(arquivo)
+        except FileNotFoundError:
+            print(f"[AVISO] Arquivo de configuração de faixas não encontrado: {caminho}. Usando geração padrão.")
+            self.use_lane_config = False
+            return
+        except json.JSONDecodeError as exc:
+            print(f"[AVISO] Erro ao ler configuração de faixas ({caminho}): {exc}. Usando geração padrão.")
+            self.use_lane_config = False
+            return
+
+        self.lane_config = dados.get('lanes', [])
+        for lane in self.lane_config:
+            lane_type = lane.get('type')
+            if lane_type == 'road':
+                self.road_lane_defs.append(lane)
+            elif lane_type == 'river':
+                self.river_lane_defs.append(lane)
+
+        if not self.road_lane_defs and not self.river_lane_defs:
+            print(f"[AVISO] Configuração de faixas vazia em {caminho}. Usando geração padrão.")
+            self.use_lane_config = False
+
+    def _obter_lane_config(self, lane_type):
+        """Retorna próxima configuração de faixa para o tipo informado."""
+        if not self.use_lane_config:
+            return None
+
+        if lane_type == 'road' and self.road_lane_defs:
+            lane = self.road_lane_defs[self.road_lane_index % len(self.road_lane_defs)]
+            self.road_lane_index += 1
+            return lane
+        if lane_type == 'river' and self.river_lane_defs:
+            lane = self.river_lane_defs[self.river_lane_index % len(self.river_lane_defs)]
+            self.river_lane_index += 1
+            return lane
+        return None
+
+    def obter_parametros_lane(self, lane_dados):
+        """Calcula parâmetros atuais da lane considerando dificuldade."""
+        if not lane_dados:
+            return {
+                'velocidade': 3.0,
+                'spawn_intervalo': 2.5,
+                'min_gap': 160,
+                'entity_width': config.TAMANHO_CARRO_LARGURA,
+                'spawn_jitter': 0.5
+            }
+
+        base_speed = lane_dados.get('base_speed', lane_dados.get('velocidade', 3.0))
+        dificuldade = max(1.0, self.dificuldade_atual)
+        velocidade = base_speed * dificuldade
+
+        spawn_rate = lane_dados.get('spawn_rate', 2.5)
+        spawn_intervalo = max(0.3, spawn_rate / dificuldade)
+
+        min_gap = lane_dados.get('min_gap', 160)
+        min_gap = max(32, min_gap / max(1.0, dificuldade * 0.9))
+
+        largura = lane_dados.get('entity_width', config.TAMANHO_CARRO_LARGURA)
+        spawn_jitter = lane_dados.get('spawn_jitter')
+        if spawn_jitter is None:
+            spawn_jitter = max(0.1, spawn_intervalo * 0.25)
+
+        lane_dados['velocidade'] = velocidade
+
+        return {
+            'velocidade': velocidade,
+            'spawn_intervalo': spawn_intervalo,
+            'min_gap': min_gap,
+            'entity_width': largura,
+            'spawn_jitter': spawn_jitter
+        }
         
     def deve_gerar_area_descanso(self):
         """
@@ -130,18 +223,41 @@ class ProceduralGenerator:
         
         for i in range(num_faixas):
             y_faixa = y_pos + (i * altura_faixa)
-            velocidade_base = random.uniform(2.0, 4.5)
-            direcao = random.choice([1, -1])
-            
-            # Aplicar dificuldade
-            velocidade = velocidade_base * self.dificuldade_atual
-            
-            faixas.append({
+            lane_config = self._obter_lane_config('road')
+
+            if lane_config:
+                velocidade_base = lane_config.get('speed', 3.0)
+                direcao = lane_config.get('dir', random.choice([1, -1]))
+                spawn_rate = lane_config.get('spawn_rate', 2.5)
+                min_gap = lane_config.get('min_gap', config.TAMANHO_CARRO_LARGURA * 2)
+                entidade = lane_config.get('entity', 'car')
+                largura_entidade = lane_config.get('width', config.TAMANHO_CARRO_LARGURA)
+                spawn_jitter = lane_config.get('spawn_jitter')
+            else:
+                velocidade_base = random.uniform(2.0, 4.5)
+                direcao = random.choice([1, -1])
+                spawn_rate = 2.5
+                min_gap = config.TAMANHO_CARRO_LARGURA * 2
+                entidade = 'car'
+                largura_entidade = config.TAMANHO_CARRO_LARGURA
+                spawn_jitter = None
+
+            faixa = {
                 'y': y_faixa,
-                'velocidade': velocidade,
+                'base_speed': velocidade_base,
                 'direcao': direcao,
-                'cor': random.choice(config.CORES_CARROS)
-            })
+                'cor': random.choice(config.CORES_CARROS),
+                'spawn_rate': spawn_rate,
+                'min_gap': min_gap,
+                'entity': entidade,
+                'entity_width': largura_entidade,
+                'spawn_jitter': spawn_jitter,
+                'tipo': 'road'
+            }
+            parametros = self.obter_parametros_lane(faixa)
+            faixa['velocidade'] = parametros['velocidade']
+
+            faixas.append(faixa)
         
         altura_total = num_faixas * altura_faixa
         
@@ -181,38 +297,71 @@ class ProceduralGenerator:
         
         for i in range(num_faixas):
             y_faixa = y_pos + (i * altura_faixa)
-            velocidade_base = random.uniform(1.5, 3.5)
-            direcao = random.choice([1, -1])
-            
-            # Aplicar dificuldade
-            velocidade = velocidade_base * self.dificuldade_atual
-            
-            faixas_rio.append({
+            lane_config = self._obter_lane_config('river')
+
+            if lane_config:
+                velocidade_base = lane_config.get('speed', 2.0)
+                direcao = lane_config.get('dir', random.choice([1, -1]))
+                spawn_rate = lane_config.get('spawn_rate', 3.0)
+                min_gap = lane_config.get('min_gap', 192)
+                largura_padrao = lane_config.get('width', 4 * config.TAMANHO_CELL)
+                spawn_jitter = lane_config.get('spawn_jitter')
+                gerar_plataformas = False
+            else:
+                velocidade_base = random.uniform(1.5, 3.5)
+                direcao = random.choice([1, -1])
+                spawn_rate = 3.0
+                min_gap = 6 * config.TAMANHO_CELL
+                largura_padrao = random.choice([
+                    3 * config.TAMANHO_CELL,
+                    4 * config.TAMANHO_CELL,
+                    6 * config.TAMANHO_CELL
+                ])
+                spawn_jitter = None
+                gerar_plataformas = True
+
+            faixa_rio = {
                 'y': y_faixa,
-                'velocidade': velocidade,
-                'direcao': direcao
-            })
-            
+                'base_speed': velocidade_base,
+                'direcao': direcao,
+                'spawn_rate': spawn_rate,
+                'min_gap': min_gap,
+                'entity': 'tronco',
+                'entity_width': largura_padrao,
+                'spawn_jitter': spawn_jitter,
+                'tipo': 'river'
+            }
+
+            parametros = self.obter_parametros_lane(faixa_rio)
+            faixa_rio['velocidade'] = parametros['velocidade']
+
+            faixas_rio.append(faixa_rio)
+
+            if not gerar_plataformas:
+                continue
+
             # PRIMEIRA FAIXA: sempre garantir tronco no centro (onde jogador está)
             if i == 0 and garantir_tronco_centro:
                 tipo_plataforma = 'tronco_garantido'
             else:
                 # Gerar plataformas para esta faixa - APENAS TRONCOS (simples e claro)
                 tipo_plataforma = 'tronco'  # Sempre troncos - sem complicação
-            
+
+            velocidade = faixa_rio['velocidade']
+
             if tipo_plataforma == 'tronco_garantido':
                 # GARANTIR tronco grande e acessível no centro da tela (onde jogador está)
                 num_troncos = random.randint(6, 8)  # Ainda mais troncos
-                
+
                 # Calcular posição do centro da tela ALINHADA AO GRID
                 centro_cell = config.GRID_LARGURA // 2
                 centro_tela = centro_cell * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
-                
+
                 # GARANTIR pelo menos UM tronco grande no centro (múltiplo de TAMANHO_CELL)
                 largura_central = 6 * config.TAMANHO_CELL  # 192px = 6 células
                 tronco_central = Tronco(centro_tela, y_faixa, largura_central, velocidade, direcao)
                 plataformas.append(tronco_central)
-                
+
                 # Gerar outros troncos ao redor (ALINHADOS AO GRID)
                 posicoes_base = []
                 espacamento_cells = config.GRID_LARGURA // (num_troncos + 1)
@@ -220,11 +369,11 @@ class ProceduralGenerator:
                     x_cell = int((j + 1) * espacamento_cells) + random.randint(-1, 1)
                     x_cell = max(0, min(x_cell, config.GRID_LARGURA - 1))
                     pos_base = x_cell * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
-                    
+
                     # Evitar sobreposição com o tronco central
                     if abs(pos_base - centro_tela) > 180:  # Distância segura (3 células)
                         posicoes_base.append(pos_base)
-                
+
                 for x_base in posicoes_base:
                     # Larguras sempre múltiplos de TAMANHO_CELL (3, 4 ou 6 células)
                     largura = random.choice([
@@ -234,11 +383,11 @@ class ProceduralGenerator:
                     ])
                     tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
                     plataformas.append(tronco)
-            
+
             elif tipo_plataforma == 'tronco':
                 # MAIS troncos (5-7) e sempre GRANDES
                 num_troncos = random.randint(5, 7)
-                
+
                 # Distribuir uniformemente pela tela ALINHADO AO GRID
                 posicoes_base = []
                 espacamento_cells = config.GRID_LARGURA // (num_troncos + 1)
@@ -248,10 +397,10 @@ class ProceduralGenerator:
                     x_cell = max(0, min(x_cell, config.GRID_LARGURA - 1))
                     pos_base = x_cell * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                     posicoes_base.append(pos_base)
-                
+
                 # Ordenar para evitar sobreposição
                 posicoes_base.sort()
-                
+
                 for j, x_base in enumerate(posicoes_base):
                     # SEMPRE troncos grandes - larguras múltiplas de TAMANHO_CELL (32px)
                     largura_opcoes = [
@@ -262,7 +411,7 @@ class ProceduralGenerator:
                         6 * config.TAMANHO_CELL   # 192px (mais comum)
                     ]
                     largura = random.choice(largura_opcoes)
-                    
+
                     # Ajustar posição se necessário para não sair da tela
                     if x_base + largura // 2 > config.LARGURA_TELA:
                         x_base = config.LARGURA_TELA - largura // 2
@@ -270,7 +419,7 @@ class ProceduralGenerator:
                     if x_base - largura // 2 < 0:
                         x_base = largura // 2
                         x_base = (x_base // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
-                    
+
                     tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
                     plataformas.append(tronco)
             
@@ -398,16 +547,42 @@ class ProceduralGenerator:
                 faixas = []
                 for i in range(num_faixas):
                     y_faixa = y_inicio + (i * 60)
-                    velocidade_base = random.uniform(2.0, 4.5)
-                    direcao = random.choice([1, -1])
-                    velocidade = velocidade_base * self.dificuldade_atual
-                    
-                    faixas.append({
+                    lane_config = self._obter_lane_config('road')
+
+                    if lane_config:
+                        velocidade_base = lane_config.get('speed', 3.0)
+                        direcao = lane_config.get('dir', random.choice([1, -1]))
+                        spawn_rate = lane_config.get('spawn_rate', 2.5)
+                        min_gap = lane_config.get('min_gap', config.TAMANHO_CARRO_LARGURA * 2)
+                        entidade = lane_config.get('entity', 'car')
+                        largura_entidade = lane_config.get('width', config.TAMANHO_CARRO_LARGURA)
+                        spawn_jitter = lane_config.get('spawn_jitter')
+                    else:
+                        velocidade_base = random.uniform(2.0, 4.5)
+                        direcao = random.choice([1, -1])
+                        spawn_rate = 2.5
+                        min_gap = config.TAMANHO_CARRO_LARGURA * 2
+                        entidade = 'car'
+                        largura_entidade = config.TAMANHO_CARRO_LARGURA
+                        spawn_jitter = None
+
+                    faixa = {
                         'y': y_faixa,
-                        'velocidade': velocidade,
+                        'base_speed': velocidade_base,
                         'direcao': direcao,
-                        'cor': random.choice(config.CORES_CARROS)
-                    })
+                        'cor': random.choice(config.CORES_CARROS),
+                        'spawn_rate': spawn_rate,
+                        'min_gap': min_gap,
+                        'entity': entidade,
+                        'entity_width': largura_entidade,
+                        'spawn_jitter': spawn_jitter,
+                        'tipo': 'road'
+                    }
+
+                    parametros = self.obter_parametros_lane(faixa)
+                    faixa['velocidade'] = parametros['velocidade']
+
+                    faixas.append(faixa)
                 
                 chunk = Chunk(
                     y_inicio=y_inicio,
@@ -433,20 +608,53 @@ class ProceduralGenerator:
                 
                 for i in range(num_faixas):
                     y_faixa = y_inicio + (i * 60)
-                    velocidade_base = random.uniform(1.5, 3.5)
-                    direcao = random.choice([1, -1])
-                    velocidade = velocidade_base * self.dificuldade_atual
-                    
-                    faixas_rio.append({
+                    lane_config = self._obter_lane_config('river')
+
+                    if lane_config:
+                        velocidade_base = lane_config.get('speed', 2.0)
+                        direcao = lane_config.get('dir', random.choice([1, -1]))
+                        spawn_rate = lane_config.get('spawn_rate', 3.0)
+                        min_gap = lane_config.get('min_gap', 192)
+                        largura_padrao = lane_config.get('width', 4 * config.TAMANHO_CELL)
+                        spawn_jitter = lane_config.get('spawn_jitter')
+                        gerar_plataformas = False
+                    else:
+                        velocidade_base = random.uniform(1.5, 3.5)
+                        direcao = random.choice([1, -1])
+                        spawn_rate = 3.0
+                        min_gap = 6 * config.TAMANHO_CELL
+                        largura_padrao = random.choice([
+                            3 * config.TAMANHO_CELL,
+                            4 * config.TAMANHO_CELL,
+                            6 * config.TAMANHO_CELL
+                        ])
+                        spawn_jitter = None
+                        gerar_plataformas = True
+
+                    faixa_rio = {
                         'y': y_faixa,
-                        'velocidade': velocidade,
-                        'direcao': direcao
-                    })
-                    
+                        'base_speed': velocidade_base,
+                        'direcao': direcao,
+                        'spawn_rate': spawn_rate,
+                        'min_gap': min_gap,
+                        'entity': 'tronco',
+                        'entity_width': largura_padrao,
+                        'spawn_jitter': spawn_jitter,
+                        'tipo': 'river'
+                    }
+
+                    parametros = self.obter_parametros_lane(faixa_rio)
+                    faixa_rio['velocidade'] = parametros['velocidade']
+
+                    faixas_rio.append(faixa_rio)
+
+                    if not gerar_plataformas:
+                        continue
+
                     # Gerar plataformas - APENAS TRONCOS (sistema simplificado)
                     # MAIS troncos (5-7) e sempre GRANDES
                     num_troncos = random.randint(5, 7)
-                    
+
                     # Distribuir uniformemente pela tela (menos gaps)
                     posicoes_base = []
                     espacamento_base = config.LARGURA_TELA / (num_troncos + 1)
@@ -456,10 +664,12 @@ class ProceduralGenerator:
                         # Alinhar ao grid
                         pos_base = (pos_base // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                         posicoes_base.append(pos_base)
-                    
+
                     # Ordenar para evitar sobreposição
                     posicoes_base.sort()
-                    
+
+                    velocidade = faixa_rio['velocidade']
+
                     for j, x_base in enumerate(posicoes_base):
                         # SEMPRE troncos grandes (múltiplos de TAMANHO_CELL)
                         largura_opcoes = [
@@ -470,7 +680,7 @@ class ProceduralGenerator:
                             6 * config.TAMANHO_CELL   # 192px (mais comum)
                         ]
                         largura = random.choice(largura_opcoes)
-                        
+
                         # Ajustar posição se necessário para não sair da tela
                         if x_base + largura // 2 > config.LARGURA_TELA:
                             x_base = config.LARGURA_TELA - largura // 2
@@ -478,7 +688,7 @@ class ProceduralGenerator:
                         if x_base - largura // 2 < 0:
                             x_base = largura // 2
                             x_base = (x_base // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
-                        
+
                         tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
                         plataformas.append(tronco)
                 
@@ -577,7 +787,21 @@ class ProceduralGenerator:
                 # Verificar se chunk está visível
                 if chunk.y_inicio <= y_max and chunk.y_fim >= y_min:
                     faixas_visiveis.extend(chunk.dados.get('faixas', []))
-        
+
+        return faixas_visiveis
+
+    def obter_faixas_rio_visiveis(self, camera_offset):
+        """Retorna as faixas de rio visíveis na tela."""
+        faixas_visiveis = []
+
+        y_min = camera_offset - 100
+        y_max = camera_offset + config.ALTURA_TELA + 100
+
+        for chunk in self.chunks:
+            if chunk.tipo == 'rio':
+                if chunk.y_inicio <= y_max and chunk.y_fim >= y_min:
+                    faixas_visiveis.extend(chunk.dados.get('faixas', []))
+
         return faixas_visiveis
     
     def obter_safe_zones_visiveis(self, camera_offset):
@@ -652,6 +876,8 @@ class ProceduralGenerator:
         self.dificuldade_atual = 1.0
         self.ultimo_intervalo = config.INTERVALO_DESAFIOS_PARA_DESCANSO
         self.ultimo_tipo = None
+        self.road_lane_index = 0
+        self.river_lane_index = 0
     
     def inicializar_mundo_inicial(self):
         """Gera os chunks iniciais do mundo"""

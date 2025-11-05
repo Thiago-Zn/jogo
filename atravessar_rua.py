@@ -161,11 +161,92 @@ class JogoAtraversarRua:
 
         # Não criar carros estáticos mais - serão gerados proceduralmente
 
+    def _pode_spawnar_na_faixa(self, grupo, lane_y, spawn_x, min_gap, largura, direcao):
+        """Verifica se há espaço suficiente para spawnar entidade na faixa."""
+        tolerancia = config.TAMANHO_CELL // 2
+        limite_min = max(0, min_gap + largura / 2)
+
+        for sprite in grupo:
+            if abs(sprite.rect.centery - lane_y) <= tolerancia:
+                largura_sprite = getattr(sprite, 'largura', sprite.rect.width)
+                distancia = abs(sprite.rect.centerx - spawn_x)
+                limite = limite_min + largura_sprite / 2
+                if distancia < limite:
+                    return False
+        return True
+
+    def _spawn_lane_entity(self, faixa, parametros):
+        """Cria entidade configurada para a faixa informada."""
+        entidade = faixa.get('entity', 'car')
+        largura = int(parametros['entity_width'])
+        direcao = faixa.get('direcao', 1)
+        y = faixa.get('y', 0)
+        spawn_x = -largura // 2 if direcao == 1 else config.LARGURA_TELA + largura // 2
+
+        grupo = self.carros_group if entidade == 'car' else self.plataformas_group
+
+        if not self._pode_spawnar_na_faixa(grupo, y, spawn_x, parametros['min_gap'], largura, direcao):
+            return False
+
+        if entidade == 'car':
+            cor = faixa.get('cor') or random.choice(config.CORES_CARROS)
+            novo = Carro(int(spawn_x), y, parametros['velocidade'], cor, direcao, largura=largura)
+            self.carros_group.add(novo)
+        elif entidade == 'tronco':
+            novo = Tronco(int(spawn_x), y, largura, parametros['velocidade'], direcao)
+            self.plataformas_group.add(novo)
+        else:
+            return False
+
+        return True
+
+    def _processar_lane_spawn(self, faixa):
+        """Atualiza timers e spawns de uma faixa configurada."""
+        parametros = self.procedural_generator.obter_parametros_lane(faixa)
+        faixa['velocidade'] = parametros['velocidade']
+
+        entidade = faixa.get('entity', 'car')
+        grupo = self.carros_group if entidade == 'car' else self.plataformas_group
+        tolerancia = config.TAMANHO_CELL // 2
+
+        for sprite in grupo:
+            if abs(sprite.rect.centery - faixa.get('y', 0)) <= tolerancia:
+                sprite.velocidade = parametros['velocidade']
+
+        tempo_spawn = faixa.get('tempo_spawn')
+        intervalo_base = parametros['spawn_intervalo']
+        if tempo_spawn is None:
+            tempo_spawn = random.uniform(0, intervalo_base)
+        else:
+            tempo_spawn -= self.delta_time
+
+        jitter = parametros['spawn_jitter']
+
+        while tempo_spawn <= 0:
+            intervalo_real = max(0.1, intervalo_base + random.uniform(-jitter, jitter))
+            spawn_sucesso = self._spawn_lane_entity(faixa, parametros)
+            tempo_spawn += max(0.1, intervalo_real)
+            if not spawn_sucesso:
+                break
+
+        faixa['tempo_spawn'] = tempo_spawn
+
     def atualizar_carros_procedurais(self):
         """Atualiza carros baseados nas faixas geradas proceduralmente"""
         # Obter faixas visíveis
         faixas_visiveis = self.procedural_generator.obter_faixas_visiveis(self.camera.offset_y)
-        
+
+        if getattr(config, 'USE_LANE_CONFIG', False):
+            for faixa in faixas_visiveis:
+                self._processar_lane_spawn(faixa)
+
+            # Remover carros que saíram da área visível
+            y_min, y_max = self.camera.obter_area_visivel()
+            for carro in list(self.carros_group):
+                if carro.rect.centery < y_min - 100 or carro.rect.centery > y_max + 100:
+                    carro.kill()
+            return
+
         # Para cada faixa, verificar se já tem carros
         for faixa in faixas_visiveis:
             faixa_y = faixa['y']
@@ -301,9 +382,26 @@ class JogoAtraversarRua:
 
     def atualizar_plataformas_procedurais(self):
         """Atualiza plataformas baseadas nos chunks de rio"""
+        if getattr(config, 'USE_LANE_CONFIG', False):
+            faixas_rio = self.procedural_generator.obter_faixas_rio_visiveis(self.camera.offset_y)
+
+            if faixas_rio:
+                y_alvos = [faixa.get('y', 0) for faixa in faixas_rio]
+            else:
+                y_alvos = []
+
+            for tronco in list(self.plataformas_group):
+                if not y_alvos or all(abs(tronco.rect.centery - y) > config.TAMANHO_CELL for y in y_alvos):
+                    tronco.kill()
+
+            for faixa in faixas_rio:
+                faixa.setdefault('entity', 'tronco')
+                self._processar_lane_spawn(faixa)
+            return
+
         # Obter plataformas visíveis
         plataformas_visiveis = self.procedural_generator.obter_plataformas_visiveis(self.camera.offset_y)
-        
+
         # Sincronizar grupo de sprites
         self.plataformas_group.empty()
         for plataforma in plataformas_visiveis:
