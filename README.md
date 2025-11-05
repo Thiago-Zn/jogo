@@ -141,6 +141,17 @@ jogo/
 4. **Tempo é pontuação** - mas segurança em primeiro lugar!
 5. **Pratique** - cada nível ensina novos padrões
 
+## 🧪 Testes e Modo Determinístico
+
+Para validar rapidamente se o jogo inicializa corretamente em ambientes sem interface gráfica, execute o teste de sanidade:
+
+```bash
+USE_LANE_CONFIG=1 SDL_VIDEODRIVER=dummy python -m pytest tests/sanity_run.py
+```
+
+- `USE_LANE_CONFIG=1`: força o uso do layout determinístico definido em `config.FAIXAS`, ideal para cenários de CI.
+- `SDL_VIDEODRIVER=dummy`: permite que o Pygame-CE rode em modo headless.
+
 ## 🔄 Migração da v1.0 para v2.0
 
 ### Mudanças Principais

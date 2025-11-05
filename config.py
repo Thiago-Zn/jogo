@@ -2,6 +2,8 @@
 Configurações e constantes do jogo
 """
 
+import os
+
 # ==================== CORES ====================
 PRETO = (0, 0, 0)
 BRANCO = (255, 255, 255)
@@ -29,6 +31,9 @@ FPS = 60
 # Velocidade do jogador expressa em pixels por segundo. Mantém o salto de
 # uma célula por comando com o passo de física fixo.
 VELOCIDADE_JOGADOR = TAMANHO_CELL * FPS
+
+# Permite alternar entre geração procedural e configuração fixa de faixas
+USE_LANE_CONFIG = os.getenv("USE_LANE_CONFIG", "").lower() in {"1", "true", "yes", "on"}
 
 # ==================== SISTEMA DE GRID/TABULEIRO MODERNO ====================
 # Tile size de 32px é padrão para jogos pixel art modernos

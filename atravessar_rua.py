@@ -85,6 +85,9 @@ class JogoAtraversarRua:
         
         # Grupos de sprites para rio
         self.plataformas_group = pygame.sprite.Group()
+
+        # Controle para configuração fixa de faixas
+        self._lane_config_initialized = False
         
         # Não inicializar jogo ainda (será inicializado quando começar a jogar)
 
@@ -142,6 +145,7 @@ class JogoAtraversarRua:
         # Limpar sprites
         self.carros_group.empty()
         self.plataformas_group.empty()
+        self._lane_config_initialized = False
         
         # Resetar sistemas
         self.camera.resetar()
@@ -166,6 +170,24 @@ class JogoAtraversarRua:
 
     def atualizar_carros_procedurais(self):
         """Atualiza carros baseados nas faixas geradas proceduralmente"""
+        if config.USE_LANE_CONFIG:
+            if not self._lane_config_initialized:
+                self.carros_group.empty()
+                carros_por_faixa = 3
+                espacamento = config.LARGURA_TELA // (carros_por_faixa + 1)
+
+                for faixa_idx, (faixa_y, velocidade, direcao) in enumerate(config.FAIXAS):
+                    for carro_idx in range(carros_por_faixa):
+                        x_pos = (carro_idx + 1) * espacamento
+                        # Alinhar ao grid para manter consistência visual
+                        x_pos = (x_pos // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
+                        cor = config.CORES_CARROS[(faixa_idx + carro_idx) % len(config.CORES_CARROS)]
+                        carro = Carro(x_pos, faixa_y, velocidade, cor, direcao)
+                        self.carros_group.add(carro)
+
+                self._lane_config_initialized = True
+            return
+
         # Obter faixas visíveis
         faixas_visiveis = self.procedural_generator.obter_faixas_visiveis(self.camera.offset_y)
         
