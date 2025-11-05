@@ -9,10 +9,12 @@ import config
 class Tronco(pygame.sprite.Sprite):
     """Classe que representa um tronco flutuante no rio"""
 
+    _pool = []
+
     def __init__(self, x, y, largura, velocidade, direcao=1):
         """
         Inicializa um tronco
-        
+
         Args:
             x: Posição X inicial
             y: Posição Y (faixa do rio)
@@ -21,18 +23,39 @@ class Tronco(pygame.sprite.Sprite):
             direcao: Direção (1 = direita, -1 = esquerda)
         """
         super().__init__()
-        
-        self.largura = largura  # Já é múltiplo de 32 (96, 128, 160, 192)
+
         self.altura = 32  # 1 célula (32px) - alinhado ao grid
+        self.image = None
+        self.rect = None
+
+        self.resetar(x, y, largura, velocidade, direcao)
+
+    @classmethod
+    def from_pool(cls, x, y, largura, velocidade, direcao=1):
+        """Obtém um tronco reutilizando um sprite existente quando disponível."""
+        if cls._pool:
+            tronco = cls._pool.pop()
+            tronco.resetar(x, y, largura, velocidade, direcao)
+            return tronco
+        return cls(x, y, largura, velocidade, direcao)
+
+    def release(self):
+        """Remove o sprite dos grupos e o devolve ao pool."""
+        self.kill()
+        Tronco._pool.append(self)
+
+    def resetar(self, x, y, largura, velocidade, direcao=1):
+        """Reconfigura o tronco para reutilização."""
+        self.largura = largura
         self.velocidade = velocidade
         self.direcao = direcao
-        
-        # Criar surface
+
+        # Recriar surface e retângulo para a nova largura
         self.image = pygame.Surface((self.largura, self.altura), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.centery = y
-        
+
         # Desenhar o tronco
         self.desenhar()
     

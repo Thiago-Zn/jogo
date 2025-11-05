@@ -138,6 +138,9 @@ class JogoAtraversarRua:
     def inicializar_jogo(self):
         """Inicializa ou reinicia o jogo (sem resetar pontuação)"""
         # Limpar sprites
+        for carro in list(self.carros_group):
+            if hasattr(carro, "release"):
+                carro.release()
         self.carros_group.empty()
         self.plataformas_group.empty()
         
@@ -192,7 +195,7 @@ class JogoAtraversarRua:
                         x_cell_invertido = config.GRID_LARGURA - 1 - x_cell
                         x_inicial = x_cell_invertido * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
 
-                    carro = Carro(
+                    carro = Carro.from_pool(
                         x_inicial,
                         faixa_y,
                         faixa['velocidade'],
@@ -200,12 +203,15 @@ class JogoAtraversarRua:
                         faixa['direcao']
                     )
                     self.carros_group.add(carro)
-        
+
         # Remover carros que saíram da área visível
         y_min, y_max = self.camera.obter_area_visivel()
         for carro in list(self.carros_group):
             if carro.rect.centery < y_min - 100 or carro.rect.centery > y_max + 100:
-                carro.kill()
+                if hasattr(carro, "release"):
+                    carro.release()
+                else:
+                    carro.kill()
     
     def verificar_safe_zone(self):
         """Verifica se o jogador está em uma área de descanso"""
@@ -315,10 +321,10 @@ class JogoAtraversarRua:
             # Atualizar jogador (animação) com delta time
             if self.jogador:
                 self.jogador.atualizar(self.delta_time)
-            
+
             # Atualizar câmera com delta time
             self.camera.update(self.jogador, self.delta_time)
-            
+
             # Atualizar geração procedimental (CRÍTICO para mundo infinito)
             self.procedural_generator.atualizar(self.camera.offset_y)
             
@@ -333,13 +339,21 @@ class JogoAtraversarRua:
             # Atualizar plataformas baseadas nos chunks de rio
             self.atualizar_plataformas_procedurais()
             
+            # Atualizar apenas entidades próximas da área visível
+            y_min, y_max = self.camera.obter_area_visivel()
+            padding = config.TAMANHO_CELL * 4
+            update_min = y_min - padding
+            update_max = y_max + padding
+
             # Atualizar carros existentes com delta time
             for carro in self.carros_group:
-                carro.atualizar(self.delta_time)
+                if carro.rect.top <= update_max and carro.rect.bottom >= update_min:
+                    carro.atualizar(self.delta_time)
 
             # Atualizar plataformas existentes com delta time
             for plataforma in self.plataformas_group:
-                plataforma.atualizar(self.delta_time)
+                if plataforma.rect.top <= update_max and plataforma.rect.bottom >= update_min:
+                    plataforma.atualizar(self.delta_time)
             
             # Verificar física do rio - TODOS os chunks de rio, não apenas visíveis
             chunks_rio = [c for c in self.procedural_generator.chunks if c.tipo == 'rio']
@@ -510,30 +524,34 @@ class JogoAtraversarRua:
             self.menu.desenhar(self.melhor_pontuacao)
         elif self.estado == GameState.PLAYING:
             self.desenhar_fundo()
-            
+
             # Desenhar grid visual (sutil)
             self.desenhar_grid_visual()
-            
+
             # Desenhar sprites com offset da câmera
             # Plataformas
+            view_rect = self.camera.get_world_view_rect(padding=config.TAMANHO_CELL * 2)
+
             for plataforma in self.plataformas_group:
-                y_tela = self.camera.aplicar_offset(plataforma.rect.centery)
-                rect_tela = plataforma.rect.copy()
-                rect_tela.centery = y_tela
+                if not view_rect.colliderect(plataforma.rect):
+                    continue
+                rect_tela = self.camera.world_to_screen(plataforma.rect)
+                if rect_tela.bottom < 0 or rect_tela.top > config.ALTURA_TELA:
+                    continue
                 self.screen.blit(plataforma.image, rect_tela)
 
             # Carros
             for carro in self.carros_group:
-                y_tela = self.camera.aplicar_offset(carro.rect.centery)
-                rect_tela = carro.rect.copy()
-                rect_tela.centery = y_tela
+                if not view_rect.colliderect(carro.rect):
+                    continue
+                rect_tela = self.camera.world_to_screen(carro.rect)
+                if rect_tela.bottom < 0 or rect_tela.top > config.ALTURA_TELA:
+                    continue
                 self.screen.blit(carro.image, rect_tela)
 
             # Jogador (com efeito visual de invulnerabilidade)
             if self.jogador is not None:
-                y_tela = self.camera.aplicar_offset(self.jogador.rect.centery)
-                rect_tela = self.jogador.rect.copy()
-                rect_tela.centery = y_tela
+                rect_tela = self.camera.world_to_screen(self.jogador.rect)
 
                 # Efeito de piscar durante invulnerabilidade
                 if not self.invulneravel or int(self.tempo_invulnerabilidade * 10) % 2 == 0:
@@ -545,27 +563,31 @@ class JogoAtraversarRua:
             
         elif self.estado == GameState.GAME_OVER:
             self.desenhar_fundo()
-            
+
             # Desenhar sprites com offset da câmera
             # Plataformas
+            view_rect = self.camera.get_world_view_rect(padding=config.TAMANHO_CELL * 2)
+
             for plataforma in self.plataformas_group:
-                y_tela = self.camera.aplicar_offset(plataforma.rect.centery)
-                rect_tela = plataforma.rect.copy()
-                rect_tela.centery = y_tela
+                if not view_rect.colliderect(plataforma.rect):
+                    continue
+                rect_tela = self.camera.world_to_screen(plataforma.rect)
+                if rect_tela.bottom < 0 or rect_tela.top > config.ALTURA_TELA:
+                    continue
                 self.screen.blit(plataforma.image, rect_tela)
-            
+
             # Carros
             for carro in self.carros_group:
-                y_tela = self.camera.aplicar_offset(carro.rect.centery)
-                rect_tela = carro.rect.copy()
-                rect_tela.centery = y_tela
+                if not view_rect.colliderect(carro.rect):
+                    continue
+                rect_tela = self.camera.world_to_screen(carro.rect)
+                if rect_tela.bottom < 0 or rect_tela.top > config.ALTURA_TELA:
+                    continue
                 self.screen.blit(carro.image, rect_tela)
-            
+
             # Jogador
             if self.jogador is not None:
-                y_tela = self.camera.aplicar_offset(self.jogador.rect.centery)
-                rect_tela = self.jogador.rect.copy()
-                rect_tela.centery = y_tela
+                rect_tela = self.camera.world_to_screen(self.jogador.rect)
                 self.screen.blit(self.jogador.image, rect_tela)
             
             # HUD
