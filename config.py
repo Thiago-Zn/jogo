@@ -51,6 +51,7 @@ CARROS_POR_FIXA_INICIAL = 2
 # ==================== CONFIGURAÇÕES DE DIFICULDADE PROGRESSIVA ====================
 # Aumenta gradualmente para manter o jogo divertido por 30+ minutos
 NIVEL_MAXIMO_DIFICULDADE = 20  # Após este nível, a dificuldade estabiliza
+DIFICULDADE_MAXIMA = 2.5  # Multiplicador máximo de dificuldade (evita velocidades impossíveis)
 
 # ==================== CONFIGURAÇÕES DE FAIXAS ====================
 # Formato: (y, velocidade_base, direcao)

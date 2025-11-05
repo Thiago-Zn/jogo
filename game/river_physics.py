@@ -66,29 +66,31 @@ class RiverPhysics:
         self.jogador_na_agua = False
         return False
     
-    def aplicar_movimento_plataforma(self, jogador, plataformas):
+    def aplicar_movimento_plataforma(self, jogador, plataformas, delta_time=1/60):
         """
         Move o jogador junto com a plataforma se estiver em cima de uma
-        
+
         Args:
             jogador: Objeto Jogador
             plataformas: Lista de plataformas
+            delta_time: Tempo desde o último frame (em segundos)
         """
         esta_em_plataforma, plataforma = self.verificar_colisao_plataformas(jogador, plataformas)
-        
+
         if esta_em_plataforma and plataforma:
             self.jogador_em_plataforma = True
             self.plataforma_atual = plataforma
-            
+
             # Mover jogador com o tronco - MOVIMENTO FLUIDO E SINCRONIZADO
             if hasattr(plataforma, 'velocidade'):
                 # Mover posição X do jogador junto com o tronco (movimento livre em pixels)
-                movimento = plataforma.velocidade * plataforma.direcao
+                # Movimento baseado em velocidade em pixels por segundo
+                movimento = plataforma.velocidade * plataforma.direcao * 60 * delta_time
                 jogador.x += movimento
-                
+
                 # Atualizar rect visual
                 jogador.rect.centerx = int(jogador.x)
-                
+
                 # Limitar dentro da tela (movimento livre mas com limites)
                 min_x = jogador.rect.width // 2
                 max_x = config.LARGURA_TELA - jogador.rect.width // 2
@@ -105,14 +107,15 @@ class RiverPhysics:
         if not self.jogador_em_plataforma:
             self.plataforma_atual = None
     
-    def atualizar(self, jogador, chunks_visiveis):
+    def atualizar(self, jogador, chunks_rio, delta_time=1/60):
         """
         Atualiza a física do rio para o jogador
-        
+
         Args:
             jogador: Objeto Jogador
-            chunks_visiveis: Lista de chunks visíveis
-            
+            chunks_rio: Lista de TODOS os chunks de rio (não apenas visíveis)
+            delta_time: Tempo desde o último frame (em segundos)
+
         Returns:
             dict: Status da física {
                 'afogando': bool,
@@ -123,24 +126,24 @@ class RiverPhysics:
         # Coletar todas as plataformas dos chunks de rio
         plataformas = []
         areas_rio = []
-        
-        for chunk in chunks_visiveis:
+
+        for chunk in chunks_rio:
             if chunk.tipo == 'rio':
                 # Adicionar plataformas do chunk
                 plataformas.extend(chunk.dados.get('plataformas', []))
                 areas_rio.append((chunk.y_inicio, chunk.y_fim))
-        
-        # Aplicar movimento de plataforma
+
+        # Aplicar movimento de plataforma com delta time
         if plataformas:
-            self.aplicar_movimento_plataforma(jogador, plataformas)
-        
+            self.aplicar_movimento_plataforma(jogador, plataformas, delta_time)
+
         # Verificar afogamento
         afogando = False
         for y_inicio, y_fim in areas_rio:
             if self.verificar_afogamento(jogador, y_inicio, y_fim, plataformas):
                 afogando = True
                 break
-        
+
         return {
             'afogando': afogando,
             'em_plataforma': self.jogador_em_plataforma,

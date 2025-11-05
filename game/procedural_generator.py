@@ -40,26 +40,30 @@ class ProceduralGenerator:
     def __init__(self, seed=None):
         """
         Inicializa o gerador procedimental
-        
+
         Args:
             seed: Seed para geração aleatória (opcional)
         """
         if seed:
             random.seed(seed)
-        
+
         # Lista de chunks ativos
         self.chunks = []
         self.safe_zones = []
-        
+
         # Controle de geração
         self.proximo_y = 0  # Próxima posição Y para gerar
         self.contador_desafios = 0  # Contador de desafios gerados
         self.ultimo_intervalo = config.INTERVALO_DESAFIOS_PARA_DESCANSO
         self.ultimo_tipo = None  # Tipo do último chunk gerado ('estrada' ou 'rio')
-        
+
         # Estatísticas
         self.distancia_percorrida = 0
         self.dificuldade_atual = 1.0
+
+        # Pool de chunks reciclados (otimização de memória)
+        self.chunk_pool = []
+        self.max_pool_size = 50
         
     def deve_gerar_area_descanso(self):
         """
@@ -496,21 +500,37 @@ class ProceduralGenerator:
     def atualizar(self, camera_offset):
         """
         Atualiza o gerador (remove chunks antigos, gera novos)
-        
+
         Args:
             camera_offset: Offset atual da câmera
         """
         # Atualizar distância percorrida (quanto mais alto, maior a distância)
         self.distancia_percorrida = max(0, -camera_offset)
-        
+
         # Remover chunks que saíram da tela (atrás da câmera, abaixo do jogador)
-        chunks_antes = len(self.chunks)
-        self.chunks = [c for c in self.chunks 
-                      if c.y_inicio < camera_offset + config.ALTURA_TELA + 200]
-        
-        # Remover safe zones antigas
-        self.safe_zones = [sz for sz in self.safe_zones 
-                          if sz.y_pos < camera_offset + config.ALTURA_TELA + 200]
+        # Usar margem maior para cleanup mais agressivo
+        margem_cleanup = 400
+        chunks_para_remover = []
+        chunks_para_manter = []
+
+        for c in self.chunks:
+            if c.y_inicio < camera_offset + config.ALTURA_TELA + margem_cleanup:
+                chunks_para_manter.append(c)
+            else:
+                chunks_para_remover.append(c)
+
+        # Reciclar chunks removidos no pool (otimização de memória)
+        for chunk in chunks_para_remover:
+            if len(self.chunk_pool) < self.max_pool_size:
+                # Limpar dados do chunk antes de adicionar ao pool
+                chunk.dados.clear()
+                self.chunk_pool.append(chunk)
+
+        self.chunks = chunks_para_manter
+
+        # Remover safe zones antigas com mesma margem
+        self.safe_zones = [sz for sz in self.safe_zones
+                          if sz.y_pos < camera_offset + config.ALTURA_TELA + margem_cleanup]
         
         # Gerar novos chunks à frente se necessário
         # O jogador vai "subir" (Y diminui), então geramos chunks com Y menor
@@ -530,7 +550,12 @@ class ProceduralGenerator:
         # Quanto mais o jogador sobe (Y diminui), maior a dificuldade
         progresso = max(0, config.ALTURA_TELA - camera_offset)
         self.distancia_percorrida = progresso
-        self.dificuldade_atual = 1.0 + (progresso / 2000) * 0.3
+
+        # Dificuldade com limite máximo (evita velocidades impossíveis)
+        dificuldade_base = 1.0 + (progresso / 2000) * 0.3
+        # Limitar dificuldade máxima a 2.5x (configurável em config.py)
+        dificuldade_max = getattr(config, 'DIFICULDADE_MAXIMA', 2.5)
+        self.dificuldade_atual = min(dificuldade_base, dificuldade_max)
     
     def obter_faixas_visiveis(self, camera_offset):
         """

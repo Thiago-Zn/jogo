@@ -28,6 +28,7 @@ class JogoAtraversarRua:
             self.screen = pygame.display.set_mode((config.LARGURA_TELA, config.ALTURA_TELA))
             pygame.display.set_caption(config.TITULO)
             self.clock = pygame.time.Clock()
+            self.delta_time = 0.0  # Delta time para física frame-independent
         except Exception as e:
             raise RuntimeError(f"Falha ao criar janela do jogo: {e}")
         
@@ -54,6 +55,10 @@ class JogoAtraversarRua:
         # Sprites
         self.jogador = None
         self.carros_group = pygame.sprite.Group()
+
+        # Cache de grid visual (otimização de renderização)
+        self.grid_cache = None
+        self.criar_cache_grid()
         
         # UI
         self.menu = Menu(self.screen, self.font_grande, self.font_media, self.font_pequena)
@@ -70,6 +75,12 @@ class JogoAtraversarRua:
         
         # Controle de área de descanso
         self.jogador_em_safe_zone = False
+        self.tempo_em_safe_zone = 0.0  # Tempo acumulado em safe zone
+
+        # Sistema de invulnerabilidade
+        self.invulneravel = False
+        self.tempo_invulnerabilidade = 0.0
+        self.duracao_invulnerabilidade = 2.0  # 2 segundos de invulnerabilidade
         
         # Grupos de sprites para rio
         self.plataformas_group = pygame.sprite.Group()
@@ -99,6 +110,9 @@ class JogoAtraversarRua:
             self.menu = Menu(self.screen, self.font_grande, self.font_media, self.font_pequena)
             self.hud = HUD(self.screen, self.font_pequena)
             self.game_over_screen = GameOverScreen(self.screen, self.font_grande, self.font_media, self.font_pequena)
+
+            # Recriar cache de grid
+            self.criar_cache_grid()
         except Exception as e:
             print(f"[ERRO] Falha ao alternar tela cheia: {e}")
             # Reverter para modo janela em caso de erro
@@ -197,20 +211,30 @@ class JogoAtraversarRua:
         """Verifica se o jogador está em uma área de descanso"""
         if self.jogador is None:
             return
-        
+
         safe_zones = self.procedural_generator.obter_safe_zones_visiveis(self.camera.offset_y)
-        
+
         estava_em_safe_zone = self.jogador_em_safe_zone
         self.jogador_em_safe_zone = False
-        
+
         for sz in safe_zones:
             if sz.colidir_com_jogador(self.jogador):
                 self.jogador_em_safe_zone = True
                 break
-        
-        # Feedback visual (opcional - pode adicionar depois)
+
+        # Sistema de safe zone - recuperar vida se ficar tempo suficiente
+        if self.jogador_em_safe_zone:
+            self.tempo_em_safe_zone += self.delta_time
+            # A cada 5 segundos em safe zone, recupera 1 vida (máximo de VIDAS_MAXIMAS)
+            if self.tempo_em_safe_zone >= 5.0 and self.vidas < config.VIDAS_MAXIMAS:
+                self.vidas += 1
+                self.tempo_em_safe_zone = 0.0
+        else:
+            self.tempo_em_safe_zone = 0.0
+
+        # Feedback visual
         if self.jogador_em_safe_zone and not estava_em_safe_zone:
-            # Entrou em safe zone
+            # Entrou em safe zone - poderia adicionar som/efeito visual
             pass
         elif not self.jogador_em_safe_zone and estava_em_safe_zone:
             # Saiu de safe zone
@@ -288,12 +312,12 @@ class JogoAtraversarRua:
     def atualizar(self):
         """Atualiza a lógica do jogo"""
         if self.estado == GameState.PLAYING:
-            # Atualizar jogador (animação)
+            # Atualizar jogador (animação) com delta time
             if self.jogador:
-                self.jogador.atualizar()
+                self.jogador.atualizar(self.delta_time)
             
-            # Atualizar câmera
-            self.camera.update(self.jogador)
+            # Atualizar câmera com delta time
+            self.camera.update(self.jogador, self.delta_time)
             
             # Atualizar geração procedimental (CRÍTICO para mundo infinito)
             self.procedural_generator.atualizar(self.camera.offset_y)
@@ -309,21 +333,34 @@ class JogoAtraversarRua:
             # Atualizar plataformas baseadas nos chunks de rio
             self.atualizar_plataformas_procedurais()
             
-            # Atualizar carros existentes
-            self.carros_group.update()
+            # Atualizar carros existentes com delta time
+            for carro in self.carros_group:
+                carro.atualizar(self.delta_time)
+
+            # Atualizar plataformas existentes com delta time
+            for plataforma in self.plataformas_group:
+                plataforma.atualizar(self.delta_time)
             
-            # Atualizar plataformas existentes
-            self.plataformas_group.update()
+            # Verificar física do rio - TODOS os chunks de rio, não apenas visíveis
+            chunks_rio = [c for c in self.procedural_generator.chunks if c.tipo == 'rio']
+            status_rio = self.river_physics.atualizar(self.jogador, chunks_rio, self.delta_time)
             
-            # Verificar física do rio
-            chunks_visiveis = self.procedural_generator.obter_chunks_visiveis(self.camera.offset_y)
-            status_rio = self.river_physics.atualizar(self.jogador, chunks_visiveis)
-            
-            # Verificar se jogador está afogando
-            if status_rio['afogando']:
+            # Atualizar sistema de invulnerabilidade
+            if self.invulneravel:
+                self.tempo_invulnerabilidade += self.delta_time
+                if self.tempo_invulnerabilidade >= self.duracao_invulnerabilidade:
+                    self.invulneravel = False
+                    self.tempo_invulnerabilidade = 0.0
+
+            # Verificar se jogador está afogando (apenas se não estiver invulnerável)
+            if status_rio['afogando'] and not self.invulneravel:
                 self.vidas -= 1
                 self.jogador.resetar_posicao()
-                
+
+                # Ativar invulnerabilidade
+                self.invulneravel = True
+                self.tempo_invulnerabilidade = 0.0
+
                 if self.vidas <= 0:
                     self.estado = GameState.GAME_OVER
                     if self.pontuacao > self.melhor_pontuacao:
@@ -335,14 +372,13 @@ class JogoAtraversarRua:
             # Verificar colisões
             self.verificar_colisoes()
             
-            # Verificar vitória (não aplicável em modo infinito, mas mantemos por enquanto)
-            # self.verificar_vitoria()
+            # Verificar vitória desabilitada - modo infinito ativo
 
     def verificar_colisoes(self):
         """Verifica colisões entre jogador e carros"""
-        if self.jogador is None:
+        if self.jogador is None or self.invulneravel:
             return
-            
+
         colisoes = self.collision_system.check_collision_pygame(
             self.jogador, self.carros_group
         )
@@ -350,6 +386,10 @@ class JogoAtraversarRua:
         if colisoes:
             self.vidas -= 1
             self.jogador.resetar_posicao()
+
+            # Ativar invulnerabilidade
+            self.invulneravel = True
+            self.tempo_invulnerabilidade = 0.0
 
             if self.vidas <= 0:
                 self.estado = GameState.GAME_OVER
@@ -373,30 +413,33 @@ class JogoAtraversarRua:
             self.inicializar_jogo()
             self.tempo_inicio = time.time()
 
-    def desenhar_grid_visual(self):
-        """Desenha o grid visual - MAIS DISCRETO"""
+    def criar_cache_grid(self):
+        """Cria cache do grid visual para otimização de renderização"""
         # Grid muito discreto (cinza claro e bem transparente)
         cor_grid = (150, 150, 150, 40)  # Cinza claro com alpha baixo
-        
-        # Obter área visível
-        y_min, y_max = self.camera.obter_area_visivel()
-        
+
         # Criar surface com alpha para transparência
-        grid_surface = pygame.Surface((config.LARGURA_TELA, config.ALTURA_TELA), pygame.SRCALPHA)
-        
+        self.grid_cache = pygame.Surface((config.LARGURA_TELA, config.ALTURA_TELA), pygame.SRCALPHA)
+
         # Desenhar linhas verticais do grid (bem discretas)
         for x in range(0, config.LARGURA_TELA + 1, config.TAMANHO_CELL):
-            pygame.draw.line(grid_surface, cor_grid, (x, 0), (x, config.ALTURA_TELA), 1)
-        
-        # Desenhar linhas horizontais do grid
-        for i in range(-5, 20):  # Mais linhas para cobrir área visível
+            pygame.draw.line(self.grid_cache, cor_grid, (x, 0), (x, config.ALTURA_TELA), 1)
+
+    def desenhar_grid_visual(self):
+        """Desenha o grid visual usando cache - OTIMIZADO"""
+        # Usar cache de linhas verticais
+        if self.grid_cache:
+            self.screen.blit(self.grid_cache, (0, 0))
+
+        # Desenhar apenas linhas horizontais dinamicamente (variam com câmera)
+        cor_grid = (150, 150, 150, 40)
+        y_min, y_max = self.camera.obter_area_visivel()
+
+        for i in range(-5, 25):  # Linhas horizontais
             y_mundo = int(y_min) + (i * config.TAMANHO_CELL)
             y_tela = self.camera.aplicar_offset(y_mundo)
             if 0 <= y_tela <= config.ALTURA_TELA:
-                pygame.draw.line(grid_surface, cor_grid, (0, y_tela), (config.LARGURA_TELA, y_tela), 1)
-        
-        # Blit com transparência
-        self.screen.blit(grid_surface, (0, 0))
+                pygame.draw.line(self.screen, cor_grid, (0, y_tela), (config.LARGURA_TELA, y_tela), 1)
     
     def desenhar_fundo(self):
         """Desenha o cenário do jogo com geração procedimental"""
@@ -478,21 +521,24 @@ class JogoAtraversarRua:
                 rect_tela = plataforma.rect.copy()
                 rect_tela.centery = y_tela
                 self.screen.blit(plataforma.image, rect_tela)
-            
+
             # Carros
             for carro in self.carros_group:
                 y_tela = self.camera.aplicar_offset(carro.rect.centery)
                 rect_tela = carro.rect.copy()
                 rect_tela.centery = y_tela
                 self.screen.blit(carro.image, rect_tela)
-            
-            # Jogador
+
+            # Jogador (com efeito visual de invulnerabilidade)
             if self.jogador is not None:
                 y_tela = self.camera.aplicar_offset(self.jogador.rect.centery)
                 rect_tela = self.jogador.rect.copy()
                 rect_tela.centery = y_tela
-                self.screen.blit(self.jogador.image, rect_tela)
-            
+
+                # Efeito de piscar durante invulnerabilidade
+                if not self.invulneravel or int(self.tempo_invulnerabilidade * 10) % 2 == 0:
+                    self.screen.blit(self.jogador.image, rect_tela)
+
             # Desenha HUD (sempre no topo)
             tempo_decorrido = time.time() - self.tempo_inicio if self.tempo_inicio > 0 else 0
             self.hud.desenhar(self.pontuacao, self.nivel, self.vidas, tempo_decorrido)
@@ -544,8 +590,8 @@ class JogoAtraversarRua:
             # Desenhar
             self.desenhar()
 
-            # Controlar FPS
-            self.clock.tick(config.FPS)
+            # Controlar FPS e calcular delta time
+            self.delta_time = self.clock.tick(config.FPS) / 1000.0  # Converter ms para segundos
 
         pygame.quit()
         sys.exit()

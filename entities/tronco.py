@@ -103,9 +103,19 @@ class Tronco(pygame.sprite.Sprite):
         pygame.draw.line(self.image, marrom_escuro, (1, 20), (self.largura - 1, 20), 1)
     
     def update(self):
-        """Atualiza a posição do tronco"""
-        self.rect.centerx += int(self.velocidade * self.direcao)
-        
+        """Atualiza a posição do tronco (método compatível com sprite.Group.update())"""
+        self.atualizar(1/60)
+
+    def atualizar(self, delta_time=1/60):
+        """
+        Atualiza a posição do tronco com delta time para física frame-independent
+
+        Args:
+            delta_time: Tempo desde o último frame (em segundos)
+        """
+        # Movimento baseado em velocidade em pixels por segundo
+        self.rect.centerx += int(self.velocidade * self.direcao * 60 * delta_time)
+
         # Reposiciona quando sai da tela
         if self.direcao == 1 and self.rect.left > config.LARGURA_TELA:
             self.rect.right = -self.largura

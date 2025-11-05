@@ -114,12 +114,10 @@ class Jogador(pygame.sprite.Sprite):
         """
         Move o jogador diretamente em pixels - MOVIMENTO LIVRE E FLUIDO
         dx, dy: -1, 0, ou 1 (direção do movimento)
-        
+
         Sistema moderno: Movimento direto em pixels sem restrições de grid
         """
-        # Prevenir movimento durante animação (opcional - pode ser removido para mais fluidez)
-        if self.movendo:
-            return
+        # Removido bloqueio de input durante animação para jogabilidade mais fluida
         
         # Calcular deslocamento em pixels
         deslocamento_x = dx * self.velocidade
@@ -149,13 +147,16 @@ class Jogador(pygame.sprite.Sprite):
         self.frame_animacao = 0
         self.tempo_animacao += 0.1  # Para animação contínua (opcional)
     
-    def atualizar(self):
+    def atualizar(self, delta_time=1/60):
         """
         Atualiza animação de pulo sutil durante movimento
         Sistema: Movimento já é direto em pixels, apenas adiciona efeito visual de pulo
+
+        Args:
+            delta_time: Tempo desde o último frame (em segundos)
         """
         if self.movendo:
-            # Efeito de pulo sutil (arco parabólico) - 4 frames
+            # Efeito de pulo sutil (arco parabólico) - baseado em tempo
             self.frame_animacao += 1
             if self.frame_animacao < 4:
                 # Arco parabólico pequeno
@@ -168,6 +169,9 @@ class Jogador(pygame.sprite.Sprite):
                 self.rect.centery = int(self.y)
                 self.movendo = False
                 self.frame_animacao = 0
+
+        # Atualizar animação contínua
+        self.tempo_animacao += delta_time
 
     def resetar_posicao(self):
         """Retorna o jogador à posição inicial (snap ao grid apenas no reset)"""
