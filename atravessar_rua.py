@@ -7,6 +7,7 @@ Objetivo: Atravesse a rua cheia de carros sem ser atingido!
 Controles: Setas do teclado (↑ ↓ ← →) ou WASD
 """
 
+import logging
 import pygame
 import random
 import sys
@@ -16,6 +17,7 @@ import config
 from entities import Jogador, Carro, SafeZone, Tronco
 from game import GameState, CollisionSystem, Camera, ProceduralGenerator, RiverPhysics
 from ui import Menu, HUD, GameOverScreen
+from core.assets import load_font
 
 
 class JogoAtraversarRua:
@@ -32,17 +34,10 @@ class JogoAtraversarRua:
         except Exception as e:
             raise RuntimeError(f"Falha ao criar janela do jogo: {e}")
         
-        # Garantir que fontes estão inicializadas
-        if not pygame.font.get_init():
-            pygame.font.init()
-        
         # Fontes
-        try:
-            self.font_grande = pygame.font.Font(None, 72)
-            self.font_media = pygame.font.Font(None, 48)
-            self.font_pequena = pygame.font.Font(None, 32)
-        except Exception as e:
-            raise RuntimeError(f"Falha ao criar fontes: {e}")
+        self.font_grande, _ = load_font(None, 72)
+        self.font_media, _ = load_font(None, 48)
+        self.font_pequena, _ = load_font(None, 32)
         
         # Estado do jogo
         self.estado = GameState.MENU
@@ -614,6 +609,10 @@ def main():
         
         # Verificar se pygame está disponível
         try:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(levelname)s:%(name)s:%(message)s",
+            )
             pygame.init()
             # Inicializar módulo de fontes explicitamente
             pygame.font.init()
