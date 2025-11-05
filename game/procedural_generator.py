@@ -37,19 +37,22 @@ class Chunk:
 class ProceduralGenerator:
     """Gerenciador de geração procedimental"""
     
-    def __init__(self, seed=None):
+    def __init__(self, seed=None, rng=None):
         """
         Inicializa o gerador procedimental
 
         Args:
             seed: Seed para geração aleatória (opcional)
         """
-        if seed:
-            random.seed(seed)
+        if rng is not None:
+            self.rng = rng
+        else:
+            self.rng = random.Random(seed)
 
         # Lista de chunks ativos
         self.chunks = []
         self.safe_zones = []
+        self.lanes = {}
 
         # Controle de geração
         self.proximo_y = 0  # Próxima posição Y para gerar
@@ -60,11 +63,63 @@ class ProceduralGenerator:
         # Estatísticas
         self.distancia_percorrida = 0
         self.dificuldade_atual = 1.0
+        self.spawn_rate_multiplicador = 1.0
+        self.nivel_atual = 1
+        self.marcos_tempo = 0
+        self._lane_counter = 0
 
         # Pool de chunks reciclados (otimização de memória)
         self.chunk_pool = []
         self.max_pool_size = 50
-        
+
+    def _next_lane_id(self):
+        self._lane_counter += 1
+        return self._lane_counter
+
+    def _registrar_faixa(self, faixa):
+        self.lanes[faixa['id']] = faixa
+        return faixa
+
+    def _criar_dados_faixa_estrada(self, y_faixa):
+        velocidade_base = self.rng.uniform(*config.CAR_VELOCIDADE_BASE_RANGE)
+        direcao = self.rng.choice([1, -1])
+        cor = self.rng.choice(config.CORES_CARROS)
+        spawn_intervalo_base = self.rng.uniform(*config.CAR_SPAWN_INTERVALO_RANGE)
+
+        faixa = {
+            'id': self._next_lane_id(),
+            'y': y_faixa,
+            'velocidade_base': velocidade_base,
+            'velocidade': velocidade_base * self.dificuldade_atual,
+            'direcao': direcao,
+            'cor': cor,
+            'spawn_interval_base': spawn_intervalo_base,
+            'spawn_interval': config.calcular_spawn_intervalo(
+                spawn_intervalo_base,
+                self.nivel_atual,
+                self.marcos_tempo,
+            ),
+            'spawn_inicial': config.CARROS_POR_FAIXA_INICIAL,
+            'max_carros': config.CARROS_POR_FAIXA_MAX,
+        }
+
+        return self._registrar_faixa(faixa)
+
+    def _criar_dados_faixa_rio(self, y_faixa):
+        velocidade_base = self.rng.uniform(*config.RIO_VELOCIDADE_BASE_RANGE)
+        direcao = self.rng.choice([1, -1])
+        return {
+            'y': y_faixa,
+            'velocidade_base': velocidade_base,
+            'velocidade': velocidade_base * self.dificuldade_atual,
+            'direcao': direcao,
+        }
+
+    def _remover_referencias_chunk(self, chunk):
+        if chunk.tipo == 'estrada':
+            for faixa in chunk.dados.get('faixas', []):
+                self.lanes.pop(faixa.get('id'), None)
+
     def deve_gerar_area_descanso(self):
         """
         Verifica se deve gerar uma área de descanso
@@ -107,7 +162,7 @@ class ProceduralGenerator:
         
         # Variar o intervalo (5 ou 6 desafios)
         self.ultimo_intervalo = config.INTERVALO_DESAFIOS_PARA_DESCANSO + \
-                                random.randint(0, config.VARIACAO_INTERVALO_DESAFIOS)
+                                self.rng.randint(0, config.VARIACAO_INTERVALO_DESAFIOS)
         
         return safe_zone
     
@@ -123,28 +178,18 @@ class ProceduralGenerator:
             Chunk: Chunk com dados das faixas
         """
         if num_faixas is None:
-            num_faixas = random.randint(2, 3)
-        
+            num_faixas = self.rng.randint(2, 3)
+
         altura_faixa = 32  # 1 célula (32px) - alinhado ao grid moderno  # Altura de cada faixa
         faixas = []
-        
+
         for i in range(num_faixas):
             y_faixa = y_pos + (i * altura_faixa)
-            velocidade_base = random.uniform(2.0, 4.5)
-            direcao = random.choice([1, -1])
-            
-            # Aplicar dificuldade
-            velocidade = velocidade_base * self.dificuldade_atual
-            
-            faixas.append({
-                'y': y_faixa,
-                'velocidade': velocidade,
-                'direcao': direcao,
-                'cor': random.choice(config.CORES_CARROS)
-            })
-        
+            faixa = self._criar_dados_faixa_estrada(y_faixa)
+            faixas.append(faixa)
+
         altura_total = num_faixas * altura_faixa
-        
+
         chunk = Chunk(
             y_inicio=y_pos,
             tipo='estrada',
@@ -173,26 +218,17 @@ class ProceduralGenerator:
             Chunk: Chunk com dados do rio
         """
         if num_faixas is None:
-            num_faixas = random.randint(2, 3)
-        
+            num_faixas = self.rng.randint(2, 3)
+
         altura_faixa = 32  # 1 célula (32px) - alinhado ao grid moderno
         plataformas = []
         faixas_rio = []
-        
+
         for i in range(num_faixas):
             y_faixa = y_pos + (i * altura_faixa)
-            velocidade_base = random.uniform(1.5, 3.5)
-            direcao = random.choice([1, -1])
-            
-            # Aplicar dificuldade
-            velocidade = velocidade_base * self.dificuldade_atual
-            
-            faixas_rio.append({
-                'y': y_faixa,
-                'velocidade': velocidade,
-                'direcao': direcao
-            })
-            
+            faixa = self._criar_dados_faixa_rio(y_faixa)
+            faixas_rio.append(faixa)
+
             # PRIMEIRA FAIXA: sempre garantir tronco no centro (onde jogador está)
             if i == 0 and garantir_tronco_centro:
                 tipo_plataforma = 'tronco_garantido'
@@ -202,7 +238,7 @@ class ProceduralGenerator:
             
             if tipo_plataforma == 'tronco_garantido':
                 # GARANTIR tronco grande e acessível no centro da tela (onde jogador está)
-                num_troncos = random.randint(6, 8)  # Ainda mais troncos
+                num_troncos = self.rng.randint(6, 8)  # Ainda mais troncos
                 
                 # Calcular posição do centro da tela ALINHADA AO GRID
                 centro_cell = config.GRID_LARGURA // 2
@@ -210,14 +246,15 @@ class ProceduralGenerator:
                 
                 # GARANTIR pelo menos UM tronco grande no centro (múltiplo de TAMANHO_CELL)
                 largura_central = 6 * config.TAMANHO_CELL  # 192px = 6 células
-                tronco_central = Tronco(centro_tela, y_faixa, largura_central, velocidade, direcao)
+                tronco_central = Tronco(centro_tela, y_faixa, largura_central, faixa['velocidade'], faixa['direcao'])
+                tronco_central.base_velocidade = faixa['velocidade_base']
                 plataformas.append(tronco_central)
-                
+
                 # Gerar outros troncos ao redor (ALINHADOS AO GRID)
                 posicoes_base = []
                 espacamento_cells = config.GRID_LARGURA // (num_troncos + 1)
                 for j in range(num_troncos - 1):  # -1 pois já criamos o central
-                    x_cell = int((j + 1) * espacamento_cells) + random.randint(-1, 1)
+                    x_cell = int((j + 1) * espacamento_cells) + self.rng.randint(-1, 1)
                     x_cell = max(0, min(x_cell, config.GRID_LARGURA - 1))
                     pos_base = x_cell * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                     
@@ -227,24 +264,25 @@ class ProceduralGenerator:
                 
                 for x_base in posicoes_base:
                     # Larguras sempre múltiplos de TAMANHO_CELL (3, 4 ou 6 células)
-                    largura = random.choice([
+                    largura = self.rng.choice([
                         3 * config.TAMANHO_CELL,  # 96px
                         4 * config.TAMANHO_CELL,  # 128px
                         6 * config.TAMANHO_CELL   # 192px
                     ])
-                    tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
+                    tronco = Tronco(x_base, y_faixa, largura, faixa['velocidade'], faixa['direcao'])
+                    tronco.base_velocidade = faixa['velocidade_base']
                     plataformas.append(tronco)
-            
+
             elif tipo_plataforma == 'tronco':
                 # MAIS troncos (5-7) e sempre GRANDES
-                num_troncos = random.randint(5, 7)
+                num_troncos = self.rng.randint(5, 7)
                 
                 # Distribuir uniformemente pela tela ALINHADO AO GRID
                 posicoes_base = []
                 espacamento_cells = config.GRID_LARGURA // (num_troncos + 1)
                 for j in range(num_troncos):
                     # Posição alinhada ao grid com variação mínima
-                    x_cell = int((j + 1) * espacamento_cells) + random.randint(-1, 1)
+                    x_cell = int((j + 1) * espacamento_cells) + self.rng.randint(-1, 1)
                     x_cell = max(0, min(x_cell, config.GRID_LARGURA - 1))
                     pos_base = x_cell * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                     posicoes_base.append(pos_base)
@@ -261,7 +299,7 @@ class ProceduralGenerator:
                         6 * config.TAMANHO_CELL,  # 192px
                         6 * config.TAMANHO_CELL   # 192px (mais comum)
                     ]
-                    largura = random.choice(largura_opcoes)
+                    largura = self.rng.choice(largura_opcoes)
                     
                     # Ajustar posição se necessário para não sair da tela
                     if x_base + largura // 2 > config.LARGURA_TELA:
@@ -271,7 +309,8 @@ class ProceduralGenerator:
                         x_base = largura // 2
                         x_base = (x_base // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                     
-                    tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
+                    tronco = Tronco(x_base, y_faixa, largura, faixa['velocidade'], faixa['direcao'])
+                    tronco.base_velocidade = faixa['velocidade_base']
                     plataformas.append(tronco)
             
             # Tipo 'misto' removido - apenas troncos agora
@@ -310,7 +349,7 @@ class ProceduralGenerator:
             return self.gerar_area_descanso(self.proximo_y)
         else:
             # Decidir entre estrada ou rio (50/50 para mais variedade)
-            if random.random() < 0.5:
+            if self.rng.random() < 0.5:
                 return self.gerar_grupo_faixas(self.proximo_y)
             else:
                 return self.gerar_grupo_rio(self.proximo_y)
@@ -345,7 +384,7 @@ class ProceduralGenerator:
             
             # Variar o intervalo
             self.ultimo_intervalo = config.INTERVALO_DESAFIOS_PARA_DESCANSO + \
-                                    random.randint(0, config.VARIACAO_INTERVALO_DESAFIOS)
+                                    self.rng.randint(0, config.VARIACAO_INTERVALO_DESAFIOS)
             
             # Safe zone não muda o ultimo_tipo - mantém o anterior para continuar a sequência
             # (ex: se último foi estrada, após safe zone pode ir para rio)
@@ -365,7 +404,7 @@ class ProceduralGenerator:
                 precisa_grama = True
             else:
                 # Primeiro chunk ou grama, pode ser qualquer coisa
-                if random.random() < 0.5:
+                if self.rng.random() < 0.5:
                     proximo_tipo = 'estrada'
                 else:
                     proximo_tipo = 'rio'
@@ -391,23 +430,15 @@ class ProceduralGenerator:
             # Gerar estrada ou rio
             if proximo_tipo == 'estrada':
                 # Estrada
-                num_faixas = random.randint(2, 3)
+                num_faixas = self.rng.randint(2, 3)
                 altura = num_faixas * 60
                 y_inicio = y_pos - altura
                 
                 faixas = []
                 for i in range(num_faixas):
                     y_faixa = y_inicio + (i * 60)
-                    velocidade_base = random.uniform(2.0, 4.5)
-                    direcao = random.choice([1, -1])
-                    velocidade = velocidade_base * self.dificuldade_atual
-                    
-                    faixas.append({
-                        'y': y_faixa,
-                        'velocidade': velocidade,
-                        'direcao': direcao,
-                        'cor': random.choice(config.CORES_CARROS)
-                    })
+                    faixa = self._criar_dados_faixa_estrada(y_faixa)
+                    faixas.append(faixa)
                 
                 chunk = Chunk(
                     y_inicio=y_inicio,
@@ -424,35 +455,28 @@ class ProceduralGenerator:
                 return chunk
             else:
                 # Rio
-                num_faixas = random.randint(2, 3)
+                num_faixas = self.rng.randint(2, 3)
                 altura = num_faixas * 60
                 y_inicio = y_pos - altura
                 
                 plataformas = []
                 faixas_rio = []
-                
+
                 for i in range(num_faixas):
                     y_faixa = y_inicio + (i * 60)
-                    velocidade_base = random.uniform(1.5, 3.5)
-                    direcao = random.choice([1, -1])
-                    velocidade = velocidade_base * self.dificuldade_atual
-                    
-                    faixas_rio.append({
-                        'y': y_faixa,
-                        'velocidade': velocidade,
-                        'direcao': direcao
-                    })
+                    faixa = self._criar_dados_faixa_rio(y_faixa)
+                    faixas_rio.append(faixa)
                     
                     # Gerar plataformas - APENAS TRONCOS (sistema simplificado)
                     # MAIS troncos (5-7) e sempre GRANDES
-                    num_troncos = random.randint(5, 7)
+                    num_troncos = self.rng.randint(5, 7)
                     
                     # Distribuir uniformemente pela tela (menos gaps)
                     posicoes_base = []
                     espacamento_base = config.LARGURA_TELA / (num_troncos + 1)
                     for j in range(num_troncos):
                         # Posição mais uniforme (menos variação)
-                        pos_base = (j + 1) * espacamento_base + random.randint(-20, 20)
+                        pos_base = (j + 1) * espacamento_base + self.rng.randint(-20, 20)
                         # Alinhar ao grid
                         pos_base = (pos_base // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                         posicoes_base.append(pos_base)
@@ -469,7 +493,7 @@ class ProceduralGenerator:
                             6 * config.TAMANHO_CELL,  # 192px
                             6 * config.TAMANHO_CELL   # 192px (mais comum)
                         ]
-                        largura = random.choice(largura_opcoes)
+                        largura = self.rng.choice(largura_opcoes)
                         
                         # Ajustar posição se necessário para não sair da tela
                         if x_base + largura // 2 > config.LARGURA_TELA:
@@ -479,7 +503,8 @@ class ProceduralGenerator:
                             x_base = largura // 2
                             x_base = (x_base // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
                         
-                        tronco = Tronco(x_base, y_faixa, largura, velocidade, direcao)
+                        tronco = Tronco(x_base, y_faixa, largura, faixa['velocidade'], faixa['direcao'])
+                        tronco.base_velocidade = faixa['velocidade_base']
                         plataformas.append(tronco)
                 
                 chunk = Chunk(
@@ -521,6 +546,7 @@ class ProceduralGenerator:
 
         # Reciclar chunks removidos no pool (otimização de memória)
         for chunk in chunks_para_remover:
+            self._remover_referencias_chunk(chunk)
             if len(self.chunk_pool) < self.max_pool_size:
                 # Limpar dados do chunk antes de adicionar ao pool
                 chunk.dados.clear()
@@ -546,16 +572,57 @@ class ProceduralGenerator:
             else:
                 break  # Evitar loop infinito
         
-        # Atualizar dificuldade baseado na distância percorrida
-        # Quanto mais o jogador sobe (Y diminui), maior a dificuldade
+        # Atualizar distância percorrida com base na posição da câmera
         progresso = max(0, config.ALTURA_TELA - camera_offset)
         self.distancia_percorrida = progresso
 
-        # Dificuldade com limite máximo (evita velocidades impossíveis)
-        dificuldade_base = 1.0 + (progresso / 2000) * 0.3
-        # Limitar dificuldade máxima a 2.5x (configurável em config.py)
-        dificuldade_max = getattr(config, 'DIFICULDADE_MAXIMA', 2.5)
-        self.dificuldade_atual = min(dificuldade_base, dificuldade_max)
+    def obter_faixa_por_id(self, faixa_id):
+        """Retorna os dados da faixa registrada pelo identificador."""
+        return self.lanes.get(faixa_id)
+
+    def atualizar_dificuldade(self, nivel, marcos_tempo):
+        """Atualiza multiplicadores de dificuldade e aplica aos chunks ativos."""
+        self.nivel_atual = max(1, int(nivel))
+        self.marcos_tempo = max(0, int(marcos_tempo))
+
+        novo_mult_vel = config.obter_multiplicador_velocidade(self.nivel_atual, self.marcos_tempo)
+        novo_mult_spawn = config.obter_multiplicador_spawn(self.nivel_atual, self.marcos_tempo)
+
+        if self.dificuldade_atual == 0:
+            self.dificuldade_atual = 1.0
+
+        ratio_vel = novo_mult_vel / self.dificuldade_atual if self.dificuldade_atual else novo_mult_vel
+
+        self.dificuldade_atual = novo_mult_vel
+        self.spawn_rate_multiplicador = novo_mult_spawn
+
+        for chunk in self.chunks:
+            if chunk.tipo == 'estrada':
+                for faixa in chunk.dados.get('faixas', []):
+                    base = faixa.get('velocidade_base', faixa.get('velocidade', 0))
+                    faixa['velocidade_base'] = base
+                    faixa['velocidade'] = base * self.dificuldade_atual
+                    base_interval = faixa.get('spawn_interval_base')
+                    if base_interval is not None:
+                        faixa['spawn_interval'] = config.calcular_spawn_intervalo(
+                            base_interval,
+                            self.nivel_atual,
+                            self.marcos_tempo,
+                        )
+            elif chunk.tipo == 'rio':
+                for faixa in chunk.dados.get('faixas', []):
+                    base = faixa.get('velocidade_base', faixa.get('velocidade', 0))
+                    faixa['velocidade_base'] = base
+                    faixa['velocidade'] = base * self.dificuldade_atual
+
+                for plataforma in chunk.dados.get('plataformas', []):
+                    base = getattr(plataforma, 'base_velocidade', None)
+                    if base is None:
+                        base = plataforma.velocidade / ratio_vel if ratio_vel else plataforma.velocidade
+                        plataforma.base_velocidade = base
+                    plataforma.velocidade = plataforma.base_velocidade * self.dificuldade_atual
+
+        return ratio_vel
     
     def obter_faixas_visiveis(self, camera_offset):
         """
@@ -646,12 +713,17 @@ class ProceduralGenerator:
         """Reseta o gerador para estado inicial"""
         self.chunks = []
         self.safe_zones = []
+        self.lanes = {}
         self.proximo_y = 0
         self.contador_desafios = 0
         self.distancia_percorrida = 0
         self.dificuldade_atual = 1.0
+        self.spawn_rate_multiplicador = 1.0
+        self.nivel_atual = 1
+        self.marcos_tempo = 0
         self.ultimo_intervalo = config.INTERVALO_DESAFIOS_PARA_DESCANSO
         self.ultimo_tipo = None
+        self._lane_counter = 0
     
     def inicializar_mundo_inicial(self):
         """Gera os chunks iniciais do mundo"""

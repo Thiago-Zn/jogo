@@ -71,13 +71,14 @@ class GameOverScreen:
         
         return self.acao
         
-    def desenhar(self, pontuacao, nivel):
+    def desenhar(self, pontuacao, nivel, melhor_nivel):
         """
         Desenha a tela de game over com design moderno
-        
+
         Args:
             pontuacao: Pontuação final
             nivel: Nível alcançado
+            melhor_nivel: Maior nível alcançado na sessão
         """
         # Fundo semi-transparente
         overlay = pygame.Surface((config.LARGURA_TELA, config.ALTURA_TELA))
@@ -120,6 +121,13 @@ class GameOverScreen:
         texto_nivel = self.font_media.render(f"Nivel Alcancado: Nivel {nivel}", True, config.AMARELO)
         texto_nivel_rect = texto_nivel.get_rect(center=(config.LARGURA_TELA // 2, 310))
         self.screen.blit(texto_nivel, texto_nivel_rect)
+
+        if melhor_nivel and melhor_nivel > 1:
+            texto_melhor = self.font_pequena.render(
+                f"Maior Nivel na Sessao: {melhor_nivel}", True, config.BRANCO
+            )
+            texto_melhor_rect = texto_melhor.get_rect(center=(config.LARGURA_TELA // 2, 340))
+            self.screen.blit(texto_melhor, texto_melhor_rect)
         
         # Desenhar botões
         self.btn_jogar.desenhar(self.screen)

@@ -21,7 +21,7 @@ from ui import Menu, HUD, GameOverScreen
 class JogoAtraversarRua:
     """Classe principal que gerencia todo o jogo"""
 
-    def __init__(self):
+    def __init__(self, seed=config.DEFAULT_SEED):
         # Configuração da tela (pygame já foi inicializado em main())
         try:
             self.tela_cheia = False
@@ -44,6 +44,14 @@ class JogoAtraversarRua:
         except Exception as e:
             raise RuntimeError(f"Falha ao criar fontes: {e}")
         
+        # Sistema de aleatoriedade
+        if isinstance(seed, random.Random):
+            self.rng = seed
+        elif seed is None:
+            self.rng = random.Random()
+        else:
+            self.rng = random.Random(seed)
+
         # Estado do jogo
         self.estado = GameState.MENU
         self.pontuacao = 0
@@ -51,7 +59,12 @@ class JogoAtraversarRua:
         self.vidas = config.VIDAS_INICIAIS
         self.tempo_inicio = 0
         self.melhor_pontuacao = 0
-        
+        self.melhor_nivel = 1
+
+        # Controle de progressão/dificuldade
+        self.marcos_tempo_dificuldade = 0
+        self.tempo_total_partida = 0.0
+
         # Sprites
         self.jogador = None
         self.carros_group = pygame.sprite.Group()
@@ -70,9 +83,9 @@ class JogoAtraversarRua:
         
         # Sistema de câmera e geração procedimental
         self.camera = Camera()
-        self.procedural_generator = ProceduralGenerator()
+        self.procedural_generator = ProceduralGenerator(rng=self.rng)
         self.river_physics = RiverPhysics()
-        
+
         # Controle de área de descanso
         self.jogador_em_safe_zone = False
         self.tempo_em_safe_zone = 0.0  # Tempo acumulado em safe zone
@@ -84,7 +97,10 @@ class JogoAtraversarRua:
         
         # Grupos de sprites para rio
         self.plataformas_group = pygame.sprite.Group()
-        
+
+        # Gerenciamento dos spawners por faixa
+        self.lane_spawners = {}
+
         # Não inicializar jogo ainda (será inicializado quando começar a jogar)
 
     def alternar_tela_cheia(self):
@@ -127,10 +143,12 @@ class JogoAtraversarRua:
         self.pontuacao = 0
         self.nivel = 1
         self.vidas = config.VIDAS_INICIAIS
-        
+        self.marcos_tempo_dificuldade = 0
+        self.tempo_total_partida = 0.0
+
         # Inicializar jogo
         self.inicializar_jogo()
-        
+
         # Mudar estado e iniciar tempo
         self.estado = GameState.PLAYING
         self.tempo_inicio = time.time()
@@ -140,12 +158,16 @@ class JogoAtraversarRua:
         # Limpar sprites
         self.carros_group.empty()
         self.plataformas_group.empty()
-        
+        self.lane_spawners.clear()
+
         # Resetar sistemas
         self.camera.resetar()
         self.procedural_generator.resetar()
         self.river_physics.resetar()
-        
+
+        # Ajustar dificuldade atual antes de gerar o mundo
+        self.procedural_generator.atualizar_dificuldade(self.nivel, self.marcos_tempo_dificuldade)
+
         # Inicializar mundo procedimental
         self.procedural_generator.inicializar_mundo_inicial()
 
@@ -161,51 +183,164 @@ class JogoAtraversarRua:
 
         # Não criar carros estáticos mais - serão gerados proceduralmente
 
+    def _criar_carro_para_faixa(self, faixa, x_pos=None):
+        """Cria um carro alinhado a uma faixa configurada."""
+        if x_pos is None:
+            if faixa['direcao'] == 1:
+                x_pos = -config.TAMANHO_CARRO_LARGURA
+            else:
+                x_pos = config.LARGURA_TELA + config.TAMANHO_CARRO_LARGURA
+
+        carro = Carro(
+            x_pos,
+            faixa['y'],
+            faixa['velocidade'],
+            faixa.get('cor', config.VERMELHO),
+            faixa['direcao']
+        )
+        carro.lane_id = faixa.get('id')
+        carro.base_velocidade = faixa.get('velocidade_base', faixa['velocidade'])
+        carro.spawn_intervalo_base = faixa.get('spawn_interval_base')
+        self.carros_group.add(carro)
+        return carro
+
+    def _spawn_carros_iniciais(self, faixa, carros_lane):
+        quantidade = max(0, faixa.get('spawn_inicial', config.CARROS_POR_FAIXA_INICIAL))
+        if quantidade <= 0:
+            return
+
+        espacamento = config.LARGURA_TELA // (quantidade + 1)
+        for i in range(quantidade):
+            x_pos = (i + 1) * espacamento + self.rng.randint(-config.TAMANHO_CELL, config.TAMANHO_CELL)
+            x_pos = max(config.TAMANHO_CELL // 2, min(x_pos, config.LARGURA_TELA - config.TAMANHO_CELL // 2))
+            if faixa['direcao'] == -1:
+                x_pos = config.LARGURA_TELA - x_pos
+            x_pos = (x_pos // config.TAMANHO_CELL) * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
+            carro = self._criar_carro_para_faixa(faixa, x_pos=x_pos)
+            carros_lane.append(carro)
+
     def atualizar_carros_procedurais(self):
         """Atualiza carros baseados nas faixas geradas proceduralmente"""
-        # Obter faixas visíveis
         faixas_visiveis = self.procedural_generator.obter_faixas_visiveis(self.camera.offset_y)
-        
-        # Para cada faixa, verificar se já tem carros
+        tempo_atual = self.tempo_total_partida
+        lanes_ativos = set(self.procedural_generator.lanes.keys())
+
+        # Limpar spawners/carros de faixas removidas
+        for lane_id in list(self.lane_spawners.keys()):
+            if lane_id not in lanes_ativos:
+                del self.lane_spawners[lane_id]
+
+        for carro in list(self.carros_group):
+            lane_id = getattr(carro, 'lane_id', None)
+            if lane_id is not None and lane_id not in lanes_ativos:
+                carro.kill()
+
+        carros_por_lane = {}
+        for carro in self.carros_group:
+            lane_id = getattr(carro, 'lane_id', None)
+            if lane_id is None:
+                continue
+            carros_por_lane.setdefault(lane_id, []).append(carro)
+
         for faixa in faixas_visiveis:
-            faixa_y = faixa['y']
-            
-            # Verificar se já existem carros nesta faixa (aproximadamente)
-            tem_carro = False
-            for carro in self.carros_group:
-                if abs(carro.rect.centery - faixa_y) < 30:
-                    tem_carro = True
-                    break
-            
-            # Se não tem carro, criar alguns
-            if not tem_carro:
-                carros_por_faixa = random.randint(2, 4)
-                for i in range(carros_por_faixa):
-                    # ESPAÇAMENTO ALINHADO AO GRID
-                    espacamento_cells = config.LARGURA_TELA // (carros_por_faixa + 1) // config.TAMANHO_CELL
-                    x_cell = int((i + 1) * espacamento_cells) + random.randint(-1, 1)  # Variação mínima: ±1 célula
-                    x_cell = max(0, min(x_cell, config.GRID_LARGURA - 1))  # Limitar dentro da tela
-                    x_inicial = x_cell * config.TAMANHO_CELL + config.TAMANHO_CELL // 2  # Centro da célula
+            lane_id = faixa.get('id')
+            if lane_id is None:
+                continue
 
-                    if faixa['direcao'] == -1:
-                        # Inverter posição (mas ainda alinhado ao grid)
-                        x_cell_invertido = config.GRID_LARGURA - 1 - x_cell
-                        x_inicial = x_cell_invertido * config.TAMANHO_CELL + config.TAMANHO_CELL // 2
+            spawner = self.lane_spawners.get(lane_id)
+            intervalo_faixa = faixa.get('spawn_interval', 1.5)
 
-                    carro = Carro(
-                        x_inicial,
-                        faixa_y,
-                        faixa['velocidade'],
-                        faixa['cor'],
-                        faixa['direcao']
-                    )
-                    self.carros_group.add(carro)
-        
+            if not spawner:
+                proximo_spawn = tempo_atual + self.rng.uniform(0.1, max(0.2, intervalo_faixa))
+                spawner = {
+                    'intervalo': intervalo_faixa,
+                    'proximo_spawn': proximo_spawn,
+                }
+                self.lane_spawners[lane_id] = spawner
+                carros_lane = carros_por_lane.setdefault(lane_id, [])
+                self._spawn_carros_iniciais(faixa, carros_lane)
+            else:
+                spawner['intervalo'] = intervalo_faixa
+                spawner['proximo_spawn'] = min(spawner['proximo_spawn'], tempo_atual + spawner['intervalo'])
+                carros_lane = carros_por_lane.setdefault(lane_id, [])
+
+            limite_carros = faixa.get('max_carros', config.CARROS_POR_FAIXA_MAX)
+            if len(carros_lane) < limite_carros and tempo_atual >= spawner['proximo_spawn']:
+                carro = self._criar_carro_para_faixa(faixa)
+                carros_lane.append(carro)
+                spawner['proximo_spawn'] = tempo_atual + spawner['intervalo']
+
         # Remover carros que saíram da área visível
         y_min, y_max = self.camera.obter_area_visivel()
         for carro in list(self.carros_group):
-            if carro.rect.centery < y_min - 100 or carro.rect.centery > y_max + 100:
+            if carro.rect.centery < y_min - 120 or carro.rect.centery > y_max + 120:
                 carro.kill()
+
+    def _aplicar_dificuldade(self):
+        """Aplica os multiplicadores atuais de dificuldade aos spawners e entidades."""
+        ratio_vel = self.procedural_generator.atualizar_dificuldade(
+            self.nivel,
+            self.marcos_tempo_dificuldade
+        )
+
+        tempo_atual = self.tempo_total_partida
+
+        # Atualizar intervalos dos spawners existentes
+        for lane_id in list(self.lane_spawners.keys()):
+            faixa = self.procedural_generator.obter_faixa_por_id(lane_id)
+            if not faixa:
+                del self.lane_spawners[lane_id]
+                continue
+
+            intervalo = faixa.get('spawn_interval', self.lane_spawners[lane_id]['intervalo'])
+            self.lane_spawners[lane_id]['intervalo'] = intervalo
+            self.lane_spawners[lane_id]['proximo_spawn'] = min(
+                self.lane_spawners[lane_id]['proximo_spawn'],
+                tempo_atual + intervalo
+            )
+
+        # Atualizar carros existentes
+        for carro in self.carros_group:
+            lane_id = getattr(carro, 'lane_id', None)
+            if lane_id is None:
+                continue
+            faixa = self.procedural_generator.obter_faixa_por_id(lane_id)
+            if not faixa:
+                continue
+            carro.base_velocidade = faixa.get('velocidade_base', carro.velocidade)
+            carro.velocidade = faixa.get('velocidade', carro.velocidade)
+
+        # Atualizar plataformas (troncos) existentes
+        for chunk in self.procedural_generator.chunks:
+            if chunk.tipo != 'rio':
+                continue
+            for plataforma in chunk.dados.get('plataformas', []):
+                base = getattr(plataforma, 'base_velocidade', None)
+                if base is None and ratio_vel:
+                    plataforma.base_velocidade = plataforma.velocidade / ratio_vel
+                if hasattr(plataforma, 'base_velocidade'):
+                    plataforma.velocidade = plataforma.base_velocidade * self.procedural_generator.dificuldade_atual
+
+    def _atualizar_progressao_dificuldade(self):
+        """Atualiza nível e marcos temporais e aplica dificuldade quando necessário."""
+        dificuldade_alterada = False
+
+        distancia = self.procedural_generator.distancia_percorrida
+        nivel_por_distancia = config.calcular_nivel_por_distancia(distancia)
+        if nivel_por_distancia > self.nivel:
+            self.nivel = nivel_por_distancia
+            self.melhor_nivel = max(self.melhor_nivel, self.nivel)
+            dificuldade_alterada = True
+
+        max_marcos = getattr(config, 'MAX_MARCOS_TEMPO', 0)
+        while self.tempo_total_partida >= (self.marcos_tempo_dificuldade + 1) * config.DIFICULDADE_INTERVALO_TEMPO:
+            if max_marcos and self.marcos_tempo_dificuldade >= max_marcos:
+                break
+            self.marcos_tempo_dificuldade += 1
+            dificuldade_alterada = True
+
+        if dificuldade_alterada:
+            self._aplicar_dificuldade()
     
     def verificar_safe_zone(self):
         """Verifica se o jogador está em uma área de descanso"""
@@ -312,16 +447,21 @@ class JogoAtraversarRua:
     def atualizar(self):
         """Atualiza a lógica do jogo"""
         if self.estado == GameState.PLAYING:
+            self.tempo_total_partida += self.delta_time
+
             # Atualizar jogador (animação) com delta time
             if self.jogador:
                 self.jogador.atualizar(self.delta_time)
-            
+
             # Atualizar câmera com delta time
             self.camera.update(self.jogador, self.delta_time)
             
             # Atualizar geração procedimental (CRÍTICO para mundo infinito)
             self.procedural_generator.atualizar(self.camera.offset_y)
-            
+
+            # Ajustar dificuldade de acordo com progresso e tempo
+            self._atualizar_progressao_dificuldade()
+
             # Atualizar pontuação baseada em progresso (distância percorrida)
             distancia = int(self.procedural_generator.distancia_percorrida / 10)
             if distancia > self.pontuacao:
@@ -507,7 +647,7 @@ class JogoAtraversarRua:
     def desenhar(self):
         """Renderiza a tela"""
         if self.estado == GameState.MENU:
-            self.menu.desenhar(self.melhor_pontuacao)
+            self.menu.desenhar(self.melhor_pontuacao, self.melhor_nivel)
         elif self.estado == GameState.PLAYING:
             self.desenhar_fundo()
             
@@ -572,7 +712,7 @@ class JogoAtraversarRua:
             tempo_decorrido = time.time() - self.tempo_inicio if self.tempo_inicio > 0 else 0
             self.hud.desenhar(self.pontuacao, self.nivel, self.vidas, tempo_decorrido)
             # Desenha tela de game over
-            self.game_over_screen.desenhar(self.pontuacao, self.nivel)
+            self.game_over_screen.desenhar(self.pontuacao, self.nivel, self.melhor_nivel)
 
         pygame.display.flip()
 
