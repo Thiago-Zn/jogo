@@ -12,9 +12,12 @@ class RiverPhysics:
     def __init__(self):
         """Inicializa o sistema de física do rio"""
         self.jogador_em_plataforma = False
-        self.plataforma_atual = None
+        self.plataforma_atual = None  # Plataforma em contato neste frame
+        self.plataforma_anexada = None  # Plataforma mantida pelo coyote time
         self.jogador_na_agua = False
-    
+        self.coyote_timer = 0.0
+        self.coyote_duration = 0.1  # 100 ms
+
     def verificar_colisao_plataformas(self, jogador, plataformas):
         """
         Verifica se o jogador está em uma plataforma (apenas troncos)
@@ -39,74 +42,33 @@ class RiverPhysics:
         
         return (False, None)
     
-    def verificar_afogamento(self, jogador, y_rio_inicio, y_rio_fim, plataformas):
-        """
-        Verifica se o jogador está na água sem plataforma
-        
-        Args:
-            jogador: Objeto Jogador
-            y_rio_inicio: Y inicial da área de rio
-            y_rio_fim: Y final da área de rio
-            plataformas: Lista de plataformas
-            
-        Returns:
-            bool: True se jogador está afogando
-        """
-        # Verificar se jogador está na área do rio
-        jogador_y = jogador.rect.centery
-        
-        if y_rio_inicio <= jogador_y <= y_rio_fim:
-            # Está na área do rio, verificar se está em plataforma
-            esta_em_plataforma, _ = self.verificar_colisao_plataformas(jogador, plataformas)
-            
-            if not esta_em_plataforma:
-                self.jogador_na_agua = True
-                return True
-        
-        self.jogador_na_agua = False
-        return False
-    
-    def aplicar_movimento_plataforma(self, jogador, plataformas, delta_time=1/60):
-        """
-        Move o jogador junto com a plataforma se estiver em cima de uma
+    def _aplicar_movimento_plataforma(self, jogador, plataforma, delta_time=1/60):
+        """Aplica movimento contínuo baseado na velocidade da plataforma."""
+        if not plataforma:
+            return
 
-        Args:
-            jogador: Objeto Jogador
-            plataformas: Lista de plataformas
-            delta_time: Tempo desde o último frame (em segundos)
-        """
-        esta_em_plataforma, plataforma = self.verificar_colisao_plataformas(jogador, plataformas)
+        deslocamento = getattr(plataforma, 'deslocamento_ultimo_passo', None)
+        if deslocamento is None:
+            # Fallback para plataformas antigas
+            velocidade = getattr(plataforma, 'velocidade_horizontal', None)
+            if velocidade is None:
+                velocidade_base = getattr(plataforma, 'velocidade', 0.0)
+                direcao = getattr(plataforma, 'direcao', 0)
+                velocidade = velocidade_base * 60.0 * direcao
+            deslocamento = velocidade * delta_time
 
-        if esta_em_plataforma and plataforma:
-            self.jogador_em_plataforma = True
-            self.plataforma_atual = plataforma
+        jogador.x += deslocamento
 
-            # Mover jogador com o tronco - MOVIMENTO FLUIDO E SINCRONIZADO
-            if hasattr(plataforma, 'velocidade'):
-                # Mover posição X do jogador junto com o tronco (movimento livre em pixels)
-                # Movimento baseado em velocidade em pixels por segundo
-                movimento = plataforma.velocidade * plataforma.direcao * 60 * delta_time
-                jogador.x += movimento
+        # Limitar dentro da tela antes de sincronizar rects
+        min_x = jogador.rect.width // 2
+        max_x = config.LARGURA_TELA - jogador.rect.width // 2
+        if jogador.x < min_x:
+            jogador.x = float(min_x)
+        elif jogador.x > max_x:
+            jogador.x = float(max_x)
 
-                # Atualizar rect visual
-                jogador.rect.centerx = int(jogador.x)
+        jogador.rect.centerx = int(round(jogador.x))
 
-                # Limitar dentro da tela (movimento livre mas com limites)
-                min_x = jogador.rect.width // 2
-                max_x = config.LARGURA_TELA - jogador.rect.width // 2
-                if jogador.x < min_x:
-                    jogador.x = float(min_x)
-                    jogador.rect.centerx = int(jogador.x)
-                elif jogador.x > max_x:
-                    jogador.x = float(max_x)
-                    jogador.rect.centerx = int(jogador.x)
-        else:
-            # Jogador saiu da plataforma - não precisa fazer nada especial
-            pass
-        self.jogador_em_plataforma = esta_em_plataforma and plataforma is not None
-        if not self.jogador_em_plataforma:
-            self.plataforma_atual = None
-    
     def atualizar(self, jogador, chunks_rio, delta_time=1/60):
         """
         Atualiza a física do rio para o jogador
@@ -133,29 +95,69 @@ class RiverPhysics:
                 plataformas.extend(chunk.dados.get('plataformas', []))
                 areas_rio.append((chunk.y_inicio, chunk.y_fim))
 
-        # Aplicar movimento de plataforma com delta time
-        if plataformas:
-            self.aplicar_movimento_plataforma(jogador, plataformas, delta_time)
+        # Determinar contato com plataforma
+        esta_em_plataforma, plataforma = self.verificar_colisao_plataformas(jogador, plataformas)
+        self.jogador_em_plataforma = esta_em_plataforma and plataforma is not None
+        self.plataforma_atual = plataforma if self.jogador_em_plataforma else None
 
-        # Verificar afogamento
-        afogando = False
-        for y_inicio, y_fim in areas_rio:
-            if self.verificar_afogamento(jogador, y_inicio, y_fim, plataformas):
-                afogando = True
-                break
+        if self.jogador_em_plataforma:
+            self.plataforma_anexada = plataforma
+            self.coyote_timer = 0.0
+        else:
+            if self.plataforma_anexada is not None:
+                self.coyote_timer += delta_time
+                if self.coyote_timer >= self.coyote_duration:
+                    self.plataforma_anexada = None
+                    self.coyote_timer = 0.0
+            else:
+                self.coyote_timer = 0.0
+
+        # Aplicar movimento baseado na plataforma atual em contato
+        if self.plataforma_atual is not None:
+            self._aplicar_movimento_plataforma(jogador, self.plataforma_atual, delta_time)
+
+        # Verificar se jogador está em alguma área de rio
+        jogador_y = jogador.rect.centery
+        em_rio = any(y_inicio <= jogador_y <= y_fim for y_inicio, y_fim in areas_rio)
+
+        if not em_rio:
+            # Resetar estado se saiu da água
+            self.plataforma_anexada = None
+            self.coyote_timer = 0.0
+
+        afogando = em_rio and self.plataforma_anexada is None
+        self.jogador_na_agua = afogando
+
+        coyote_restante = 0.0
+        if self.plataforma_anexada is not None and not self.jogador_em_plataforma:
+            coyote_restante = max(0.0, self.coyote_duration - self.coyote_timer)
 
         return {
             'afogando': afogando,
             'em_plataforma': self.jogador_em_plataforma,
-            'plataforma': self.plataforma_atual
+            'plataforma': self.plataforma_atual,
+            'anexado': self.plataforma_anexada is not None,
+            'plataforma_anexada': self.plataforma_anexada,
+            'coyote_restante': coyote_restante,
+            'em_rio': em_rio
         }
-    
+
     def resetar(self):
         """Reseta o estado da física do rio"""
         self.jogador_em_plataforma = False
         self.plataforma_atual = None
+        self.plataforma_anexada = None
         self.jogador_na_agua = False
-    
+        self.coyote_timer = 0.0
+
     def __repr__(self):
         return f"RiverPhysics(plataforma={self.jogador_em_plataforma}, agua={self.jogador_na_agua})"
+
+    def resetar_estado_jogador(self):
+        """Limpa estados relacionados ao jogador (para respawns)."""
+        self.jogador_em_plataforma = False
+        self.plataforma_atual = None
+        self.plataforma_anexada = None
+        self.jogador_na_agua = False
+        self.coyote_timer = 0.0
 

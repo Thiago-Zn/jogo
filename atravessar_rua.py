@@ -72,6 +72,15 @@ class JogoAtraversarRua:
         self.camera = Camera()
         self.procedural_generator = ProceduralGenerator()
         self.river_physics = RiverPhysics()
+
+        # Estado atual do rio (mantido para HUD/depuração)
+        self.status_rio = {
+            'afogando': False,
+            'em_plataforma': False,
+            'anexado': False,
+            'coyote_restante': 0.0,
+            'em_rio': False,
+        }
         
         # Controle de área de descanso
         self.jogador_em_safe_zone = False
@@ -344,7 +353,8 @@ class JogoAtraversarRua:
             # Verificar física do rio - TODOS os chunks de rio, não apenas visíveis
             chunks_rio = [c for c in self.procedural_generator.chunks if c.tipo == 'rio']
             status_rio = self.river_physics.atualizar(self.jogador, chunks_rio, self.delta_time)
-            
+            self.status_rio.update(status_rio)
+
             # Atualizar sistema de invulnerabilidade
             if self.invulneravel:
                 self.tempo_invulnerabilidade += self.delta_time
@@ -354,21 +364,11 @@ class JogoAtraversarRua:
 
             # Verificar se jogador está afogando (apenas se não estiver invulnerável)
             if status_rio['afogando'] and not self.invulneravel:
-                self.vidas -= 1
-                self.jogador.resetar_posicao()
+                self._registrar_morte()
 
-                # Ativar invulnerabilidade
-                self.invulneravel = True
-                self.tempo_invulnerabilidade = 0.0
-
-                if self.vidas <= 0:
-                    self.estado = GameState.GAME_OVER
-                    if self.pontuacao > self.melhor_pontuacao:
-                        self.melhor_pontuacao = self.pontuacao
-            
             # Verificar se jogador está em área de descanso
             self.verificar_safe_zone()
-            
+
             # Verificar colisões
             self.verificar_colisoes()
             
@@ -384,17 +384,29 @@ class JogoAtraversarRua:
         )
 
         if colisoes:
-            self.vidas -= 1
+            self._registrar_morte()
+
+    def _registrar_morte(self):
+        """Processa a perda de uma vida, resetando estados necessários."""
+        if self.invulneravel:
+            return
+
+        self.vidas -= 1
+
+        if self.jogador:
             self.jogador.resetar_posicao()
 
-            # Ativar invulnerabilidade
-            self.invulneravel = True
-            self.tempo_invulnerabilidade = 0.0
+        # Resetar física do rio (inclui coyote timer)
+        self.river_physics.resetar_estado_jogador()
 
-            if self.vidas <= 0:
-                self.estado = GameState.GAME_OVER
-                if self.pontuacao > self.melhor_pontuacao:
-                    self.melhor_pontuacao = self.pontuacao
+        # Ativar invulnerabilidade temporária
+        self.invulneravel = True
+        self.tempo_invulnerabilidade = 0.0
+
+        if self.vidas <= 0:
+            self.estado = GameState.GAME_OVER
+            if self.pontuacao > self.melhor_pontuacao:
+                self.melhor_pontuacao = self.pontuacao
 
     def verificar_vitoria(self):
         """Verifica se o jogador chegou ao topo"""
