@@ -88,7 +88,7 @@ class Menu:
         
         return self.acao
     
-    def desenhar(self, melhor_pontuacao=0):
+    def desenhar(self, melhor_pontuacao=0, melhor_nivel=1):
         """Desenha o menu inicial com design moderno"""
         self.frame += 1
         
@@ -131,19 +131,29 @@ class Menu:
         # Desenha sapo de exemplo
         self.screen.blit(self.sapo_demo.image, self.sapo_demo.rect)
         
-        # Melhor pontuação
-        if melhor_pontuacao > 0:
-            melhor_bg = pygame.Surface((280, 40))
+        # Estatísticas persistentes
+        mostrar_estatisticas = melhor_pontuacao > 0 or melhor_nivel > 1
+        if mostrar_estatisticas:
+            linhas = []
+            if melhor_pontuacao > 0:
+                linhas.append(self.font_pequena.render(
+                    f"Melhor Pontuacao: {melhor_pontuacao}", True, config.AMARELO
+                ))
+            if melhor_nivel > 1:
+                linhas.append(self.font_pequena.render(
+                    f"Maior Nivel: {melhor_nivel}", True, config.AMARELO
+                ))
+
+            altura = 40 + max(0, len(linhas) - 1) * 28
+            melhor_bg = pygame.Surface((320, altura))
             melhor_bg.fill((0, 0, 0))
             melhor_bg.set_alpha(150)
-            melhor_bg_rect = melhor_bg.get_rect(center=(config.LARGURA_TELA // 2, 240))
+            melhor_bg_rect = melhor_bg.get_rect(center=(config.LARGURA_TELA // 2, 240 + (len(linhas) - 1) * 14))
             self.screen.blit(melhor_bg, melhor_bg_rect)
-            
-            melhor = self.font_pequena.render(
-                f"Melhor Pontuacao: {melhor_pontuacao}", True, config.AMARELO
-            )
-            melhor_rect = melhor.get_rect(center=(config.LARGURA_TELA // 2, 240))
-            self.screen.blit(melhor, melhor_rect)
+
+            for idx, texto in enumerate(linhas):
+                texto_rect = texto.get_rect(center=(config.LARGURA_TELA // 2, 240 + idx * 28))
+                self.screen.blit(texto, texto_rect)
         
         # Desenhar botões
         for botao in self.botoes:
