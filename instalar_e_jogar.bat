@@ -39,19 +39,19 @@ if %errorlevel% neq 0 (
 echo [OK] pip encontrado
 echo.
 
-REM Instala pygame
-echo [3/4] Instalando/verificando Pygame...
+REM Instala pygame-ce
+echo [3/4] Instalando/verificando Pygame-CE...
 python -c "import pygame" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Instalando Pygame...
+    echo Instalando Pygame-CE...
     if exist requirements.txt (
         python -m pip install -r requirements.txt
     ) else (
-        python -m pip install pygame
+        python -m pip install pygame-ce
     )
 ) else (
     for /f "tokens=*" %%i in ('python -c "import pygame; print(pygame.version.ver)"') do set PYGAME_VERSION=%%i
-    echo [OK] Pygame ja instalado (versao %PYGAME_VERSION%)
+    echo [OK] Pygame-CE ja instalado (versao %PYGAME_VERSION%)
 )
 echo.
 

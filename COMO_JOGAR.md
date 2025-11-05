@@ -1,48 +1,39 @@
-# 🎮 Como Jogar - Guia Rápido
+# 🎮 Como Jogar - Guia Rápido v2.0
 
 ## 🚀 Instalação Rápida (1 minuto)
 
-### Opção 1: Instalação automática
-```bash
-# Clone ou baixe o projeto
-cd jogo
+### Opção 1: Instalação automática (Recomendado)
 
-# Instale as dependências
-pip install -r requirements.txt
+**Windows:**
+```bash
+executar_jogo.bat
+```
+
+### Opção 2: Instalação manual
+```bash
+# Instale o Pygame-CE
+pip install pygame-ce
+# ou
+python -m pip install pygame-ce
 
 # Execute o jogo
 python atravessar_rua.py
 ```
 
-### Opção 2: Instalação manual
+### Opção 3: Instalador completo
+**Windows:**
 ```bash
-pip install pygame
-python atravessar_rua.py
-```
-
-### Para Google Colab
-```python
-# Execute essas células no Colab:
-
-# Célula 1: Instalar pygame
-!pip install pygame
-
-# Célula 2: Fazer download do arquivo (se necessário)
-# Upload do arquivo atravessar_rua.py ou clone do repositório
-
-# Célula 3: Executar
-# NOTA: Pygame com janelas gráficas não funciona bem no Colab
-# Para Colab, recomenda-se execução local
+instalar_e_jogar.bat
 ```
 
 ## 🎯 Controles
 
 | Tecla | Ação |
 |-------|------|
-| **↑** | Mover para CIMA |
-| **↓** | Mover para BAIXO |
-| **←** | Mover para ESQUERDA |
-| **→** | Mover para DIREITA |
+| **↑** ou **W** | Mover para CIMA |
+| **↓** ou **S** | Mover para BAIXO |
+| **←** ou **A** | Mover para ESQUERDA |
+| **→** ou **D** | Mover para DIREITA |
 | **ESPAÇO** | Começar / Recomeçar |
 | **ESC** | Menu / Sair |
 
@@ -60,7 +51,7 @@ python atravessar_rua.py
 ### Passo 3: Jogando
 1. **Objetivo**: Leve o sapo (personagem verde) do fundo da tela até o topo
 2. **Desafio**: Evite ser atingido pelos carros que se movem horizontalmente
-3. **Movimento**: Use as setas do teclado para navegar
+3. **Movimento**: Use as setas ou WASD para navegar
 4. **Vidas**: Você começa com 3 vidas ❤️❤️❤️
 5. **Tempo**: Quanto mais rápido chegar, mais pontos ganha!
 
@@ -83,7 +74,7 @@ python atravessar_rua.py
    - Identifique os espaços seguros
 
 2. **Movimento lateral**
-   - Use as setas ← → para evitar carros
+   - Use as setas ← → ou A/D para evitar carros
    - Você não precisa ir em linha reta!
 
 3. **Não tenha pressa**
@@ -112,16 +103,15 @@ python atravessar_rua.py
 
 ### "ModuleNotFoundError: No module named 'pygame'"
 ```bash
-pip install pygame
+pip install pygame-ce
 # ou
-pip3 install pygame
+pip3 install pygame-ce
+# ou
+python -m pip install pygame-ce
 ```
 
-### "Permission denied"
-```bash
-chmod +x atravessar_rua.py
-python atravessar_rua.py
-```
+### "Python 3.14 não funciona"
+O jogo agora funciona perfeitamente com Python 3.14 usando Pygame-CE!
 
 ### O jogo não abre
 - Certifique-se de ter um ambiente gráfico (não funciona em servidores sem GUI)
@@ -160,10 +150,31 @@ python -c "import pygame; print(pygame.version.ver)"
 - 💎 **Diamante**: Alcançar nível 10
 - 🏆 **Mestre**: Alcançar nível 15+
 
+## ✨ Novidades da v2.0
+
+- ✅ Biblioteca Pygame-CE (compatível com Python 3.14)
+- ✅ Código modular e organizado
+- ✅ Suporte a WASD além das setas
+- ✅ Melhor performance
+- ✅ Gráficos mais suaves
+- ✅ Melhor compatibilidade
+
+## 🏗️ Estrutura do Código
+
+O código foi reorganizado em módulos:
+
+- **entities/**: Jogador e Carros
+- **game/**: Lógica do jogo (estados, colisões)
+- **ui/**: Interface (menu, HUD, game over)
+- **utils/**: Utilitários (cores, helpers)
+- **config.py**: Todas as configurações
+
 ## 🎉 Divirta-se!
 
 Boa sorte atravessando a rua! O recorde mundial é nível 20... você consegue chegar lá? 🚀
 
 ---
+
+**Versão 2.0 - Agora com Pygame-CE e código modular!**
 
 **Dúvidas?** Leia o README.md completo para mais informações.

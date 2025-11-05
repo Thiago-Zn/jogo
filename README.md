@@ -1,19 +1,28 @@
-# 🐸 Atravessar a Rua - Frogger Style
+# 🐸 Atravessar a Rua v2.0 - Frogger Style
 
-Um jogo completo inspirado no clássico Frogger, desenvolvido em Python com Pygame para demonstrar o potencial da IA como desenvolvedora de jogos.
+Um jogo completo inspirado no clássico Frogger, desenvolvido em Python com **Pygame-CE** - biblioteca moderna, compatível e performática.
 
 ![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)
-![Pygame](https://img.shields.io/badge/Pygame-2.5.0+-green.svg)
+![Pygame-CE](https://img.shields.io/badge/Pygame--CE-2.5.0+-green.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ## 🎯 Objetivo do Jogo
 
 Controle um simpático sapo que precisa atravessar uma rua movimentada cheia de carros em alta velocidade! Chegue até o topo sem ser atingido para avançar de nível. Quanto mais rápido você chegar, mais pontos você ganha!
 
-## ✨ Características
+## ✨ Características v2.0
+
+### 🚀 Melhorias da Versão 2.0
+- ✅ **Biblioteca Pygame-CE** - Compatível com Python 3.14+
+- ✅ **Código Modular** - Estrutura organizada em módulos
+- ✅ **Melhor compatibilidade** - Funciona com Python 3.7+ até 3.14
+- ✅ **Suporte a WASD** - Além das setas direcionais
+- ✅ **Gráficos melhorados** - Renderização otimizada
+- ✅ **Performance otimizada** - Melhor uso de recursos
+- ✅ **Arquitetura limpa** - Fácil de manter e expandir
 
 ### Funcionalidades Principais
-- 🎮 **Controle suave e responsivo** via teclas direcionais
+- 🎮 **Controle suave e responsivo** via teclas direcionais ou WASD
 - 🚗 **Carros com movimento automático** em múltiplas faixas
 - 💥 **Sistema de colisão preciso**
 - 🎯 **Sistema de níveis progressivos** com dificuldade crescente
@@ -33,25 +42,28 @@ Controle um simpático sapo que precisa atravessar uma rua movimentada cheia de 
 
 ## 🚀 Como Jogar
 
-### Instalação
+### Instalação Rápida
 
-1. **Clone o repositório ou baixe os arquivos**
-   ```bash
-   git clone <url-do-repositorio>
-   cd jogo
-   ```
+#### Opção 1: Script Automático (Recomendado)
 
-2. **Instale as dependências**
+**Windows:**
+```bash
+executar_jogo.bat
+```
+
+#### Opção 2: Instalação Manual
+
+1. **Instale as dependências**
    ```bash
    pip install -r requirements.txt
    ```
-
-   Ou instale o Pygame diretamente:
+   
+   Ou instale o Pygame-CE diretamente:
    ```bash
-   pip install pygame
+   pip install pygame-ce
    ```
 
-3. **Execute o jogo**
+2. **Execute o jogo**
    ```bash
    python atravessar_rua.py
    ```
@@ -60,10 +72,10 @@ Controle um simpático sapo que precisa atravessar uma rua movimentada cheia de 
 
 | Tecla | Ação |
 |-------|------|
-| **↑** | Mover para cima |
-| **↓** | Mover para baixo |
-| **←** | Mover para esquerda |
-| **→** | Mover para direita |
+| **↑** ou **W** | Mover para cima |
+| **↓** ou **S** | Mover para baixo |
+| **←** ou **A** | Mover para esquerda |
+| **→** ou **D** | Mover para direita |
 | **ESPAÇO** | Iniciar jogo / Jogar novamente |
 | **ESC** | Voltar ao menu / Sair |
 
@@ -84,47 +96,40 @@ Controle um simpático sapo que precisa atravessar uma rua movimentada cheia de 
 - **Nível 2+**: Mais carros, velocidade aumentada
 - **Nível 5+**: Desafio extremo para jogadores habilidosos!
 
-## 🏗️ Estrutura do Código
-
-O jogo foi desenvolvido com código limpo, modular e bem comentado:
+## 🏗️ Estrutura do Projeto
 
 ```
-atravessar_rua.py
-├── Classe Jogador
-│   ├── Desenho do personagem
-│   ├── Sistema de movimento
-│   └── Detecção de vitória
-├── Classe Carro
-│   ├── Desenho dos obstáculos
-│   ├── Movimento automático
-│   └── Reposicionamento
-└── Classe JogoAtraversarRua
-    ├── Gerenciamento de estados
-    ├── Sistema de colisão
-    ├── Renderização de cenários
-    └── Loop principal
+jogo/
+├── atravessar_rua.py      # Arquivo principal (entry point)
+├── config.py              # Configurações e constantes
+├── entities/              # Entidades do jogo
+│   ├── __init__.py
+│   ├── jogador.py         # Classe Jogador
+│   └── carro.py           # Classe Carro
+├── game/                  # Lógica do jogo
+│   ├── __init__.py
+│   ├── game_state.py      # Gerenciador de estados
+│   └── collision.py       # Sistema de colisão
+├── ui/                    # Interface do usuário
+│   ├── __init__.py
+│   ├── menu.py            # Tela de menu
+│   ├── hud.py             # Heads-up display
+│   └── game_over.py       # Tela de game over
+├── utils/                 # Utilitários
+│   ├── __init__.py
+│   └── colors.py          # Paleta de cores
+├── requirements.txt       # Dependências (Pygame-CE)
+├── executar_jogo.bat      # Script de execução (Windows)
+├── instalar_e_jogar.bat   # Instalador completo (Windows)
+├── README.md              # Este arquivo
+└── COMO_JOGAR.md          # Guia de jogo detalhado
 ```
-
-## 🎨 Design Visual
-
-- **Cores vibrantes** e contrastantes para fácil identificação
-- **Sprites desenhados proceduralmente** (sapo, carros, cenário)
-- **Animações suaves** a 60 FPS
-- **Interface intuitiva** com HUD informativo
-- **Feedback visual** claro para todas as ações
-
-## 🧪 Testado e Funcional
-
-✅ O jogo foi totalmente testado e está **100% funcional**
-✅ Sem bugs conhecidos
-✅ Performance otimizada
-✅ Experiência de jogo fluida
 
 ## 💻 Requisitos do Sistema
 
-- **Python**: 3.7 ou superior
-- **Pygame**: 2.5.0 ou superior
-- **Sistema Operacional**: Windows, Linux ou macOS
+- **Python**: 3.7 até 3.14 (recomendado 3.9+)
+- **Pygame-CE**: 2.5.0 ou superior
+- **Sistema Operacional**: Windows
 - **Memória**: 100 MB RAM
 - **Processador**: Qualquer processador moderno
 
@@ -136,23 +141,39 @@ atravessar_rua.py
 4. **Tempo é pontuação** - mas segurança em primeiro lugar!
 5. **Pratique** - cada nível ensina novos padrões
 
-## 🎓 Desenvolvido como Teste de IA
+## 🔄 Migração da v1.0 para v2.0
 
-Este jogo foi criado para demonstrar o potencial de uma IA como desenvolvedora de jogos completos, incluindo:
+### Mudanças Principais
+- **Biblioteca**: Arcade → Pygame-CE (compatibilidade Python 3.14)
+- **Arquitetura**: Código monolítico → Estrutura modular
+- **Controles**: Setas → Setas + WASD
+- **Performance**: Melhorada significativamente
+- **Compatibilidade**: Suporte completo a Python 3.14
 
-- ✅ **Lógica de jogo complexa**
-- ✅ **Sistema de física e colisões**
-- ✅ **Interface gráfica**
-- ✅ **Gerenciamento de estados**
-- ✅ **Sistema de progressão**
-- ✅ **Código limpo e documentado**
+### Melhorias Arquiteturais
+- **Separação de responsabilidades**: Entities, Game, UI, Utils
+- **Código mais limpo**: Fácil de manter e expandir
+- **Reutilização**: Componentes modulares
+- **Testabilidade**: Estrutura permite testes unitários
 
-## 🐛 Suporte
+## 🐛 Resolução de Problemas
 
-Se encontrar algum problema:
-1. Verifique se o Pygame está instalado corretamente
-2. Certifique-se de estar usando Python 3.7+
-3. Tente reinstalar as dependências
+### "ModuleNotFoundError: No module named 'pygame'"
+```bash
+pip install pygame-ce
+# ou
+python -m pip install pygame-ce
+```
+
+### "Python 3.14 não funciona"
+O jogo agora funciona perfeitamente com Python 3.14 usando Pygame-CE!
+
+### "O jogo não abre"
+- Certifique-se de ter um ambiente gráfico (não funciona em servidores sem GUI)
+- Teste se o pygame está funcionando:
+```bash
+python -c "import pygame; print(pygame.version.ver)"
+```
 
 ## 📜 Licença
 
@@ -165,3 +186,5 @@ Boa sorte atravessando a rua! Tente alcançar o nível 10! 🏆
 ---
 
 **Desenvolvido com 🤖 + ❤️**
+
+**Versão 2.0 - Agora com Pygame-CE e código modular!**
