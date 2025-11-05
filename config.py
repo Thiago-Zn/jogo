@@ -2,6 +2,8 @@
 Configurações e constantes do jogo
 """
 
+import os
+
 # ==================== CORES ====================
 PRETO = (0, 0, 0)
 BRANCO = (255, 255, 255)
@@ -27,6 +29,9 @@ TITULO = "🐸 Atravessar a Rua v3.0 - Frogger Infinito"
 # ==================== CONFIGURAÇÕES DO JOGO ====================
 FPS = 60
 VELOCIDADE_JOGADOR = 32  # Velocidade em pixels por frame (1 célula por frame = movimento fluido)
+
+# Permite alternar entre geração procedural e configuração fixa de faixas
+USE_LANE_CONFIG = os.getenv("USE_LANE_CONFIG", "").lower() in {"1", "true", "yes", "on"}
 
 # ==================== SISTEMA DE GRID/TABULEIRO MODERNO ====================
 # Tile size de 32px é padrão para jogos pixel art modernos
