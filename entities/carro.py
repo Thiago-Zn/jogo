@@ -15,10 +15,13 @@ class Carro(pygame.sprite.Sprite):
         # Criar surface para o sprite
         self.image = pygame.Surface((config.TAMANHO_CARRO_LARGURA, config.TAMANHO_CARRO_ALTURA), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
-        self.rect.centerx = x
-        self.rect.centery = y
-        
-        self.velocidade = velocidade
+        self.rect.centerx = int(x)
+        self.rect.centery = int(y)
+
+        self.x = float(x)
+        self.y = float(y)
+
+        self.velocidade = velocidade  # Pixels por segundo
         self.cor = cor
         self.direcao = direcao  # 1 = direita, -1 = esquerda
         
@@ -119,11 +122,14 @@ class Carro(pygame.sprite.Sprite):
             delta_time: Tempo desde o último frame (em segundos)
         """
         # Movimento baseado em velocidade em pixels por segundo
-        self.rect.centerx += int(self.velocidade * self.direcao * 60 * delta_time)
+        self.x += self.velocidade * self.direcao * delta_time
+        self.rect.centerx = int(self.x)
 
         # Reposiciona quando sai da tela
         if self.direcao == 1 and self.rect.left > config.LARGURA_TELA:
             self.rect.right = -config.TAMANHO_CARRO_LARGURA
+            self.x = float(self.rect.centerx)
         elif self.direcao == -1 and self.rect.right < 0:
             self.rect.left = config.LARGURA_TELA + config.TAMANHO_CARRO_LARGURA
+            self.x = float(self.rect.centerx)
 

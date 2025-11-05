@@ -34,7 +34,9 @@ class Jogador(pygame.sprite.Sprite):
         # Estado de movimento (para permitir input durante movimento)
         self.movendo = False
         self.frame_animacao = 0  # Contador de frames para animação de pulo
-        self.velocidade = config.VELOCIDADE_JOGADOR  # Pixels por frame
+        self.velocidade = config.VELOCIDADE_JOGADOR  # Pixels por segundo
+        self._pendente_x = 0.0
+        self._pendente_y = 0.0
         
         # Desenhar o sprite inicial
         self.desenhar()
@@ -111,41 +113,70 @@ class Jogador(pygame.sprite.Sprite):
         return grid_x, grid_y
     
     def mover(self, dx, dy):
-        """
-        Move o jogador diretamente em pixels - MOVIMENTO LIVRE E FLUIDO
-        dx, dy: -1, 0, ou 1 (direção do movimento)
+        """Agenda um movimento discreto alinhado ao grid."""
+        if dx == 0 and dy == 0:
+            return
 
-        Sistema moderno: Movimento direto em pixels sem restrições de grid
-        """
-        # Removido bloqueio de input durante animação para jogabilidade mais fluida
-        
-        # Calcular deslocamento em pixels
-        deslocamento_x = dx * self.velocidade
-        deslocamento_y = dy * self.velocidade
-        
-        # Nova posição
-        nova_x = self.x + deslocamento_x
-        nova_y = self.y + deslocamento_y
-        
-        # Verificar limites APENAS horizontais (mundo infinito vertical)
+        deslocamento_x = dx * config.TAMANHO_CELL
+        deslocamento_y = dy * config.TAMANHO_CELL
+
+        # Limitar movimento horizontal para permanecer dentro da tela.
+        if deslocamento_x:
+            min_x = self.rect.width // 2
+            max_x = config.LARGURA_TELA - self.rect.width // 2
+            destino_x = self.x + self._pendente_x + deslocamento_x
+            if min_x <= destino_x <= max_x:
+                self._pendente_x += deslocamento_x
+        if deslocamento_y:
+            self._pendente_y += deslocamento_y
+
+        if self._pendente_x or self._pendente_y:
+            self.movendo = True
+            self.frame_animacao = 0
+            self.tempo_animacao += 0.1  # Para animação contínua (opcional)
+
+    def step(self, delta_time):
+        """Aplica o deslocamento acumulado usando a velocidade por segundo."""
+        if not (self._pendente_x or self._pendente_y):
+            return
+
+        deslocamento_maximo = self.velocidade * delta_time
+
+        def _consumir_pendente(valor_pendente):
+            if valor_pendente > 0:
+                delta = min(valor_pendente, deslocamento_maximo)
+            elif valor_pendente < 0:
+                delta = -min(-valor_pendente, deslocamento_maximo)
+            else:
+                delta = 0.0
+            return delta
+
+        delta_x = _consumir_pendente(self._pendente_x)
+        delta_y = _consumir_pendente(self._pendente_y)
+
+        self._pendente_x -= delta_x
+        self._pendente_y -= delta_y
+
+        self.x += delta_x
+        self.y += delta_y
+
+        # Atualizar rect e aplicar limites horizontais
         min_x = self.rect.width // 2
         max_x = config.LARGURA_TELA - self.rect.width // 2
-        
-        # Aplicar movimento horizontal se estiver dentro dos limites
-        if min_x <= nova_x <= max_x:
-            self.x = nova_x
-        
-        # Movimento vertical: SEMPRE permitido (mundo infinito)
-        self.y = nova_y
-        
-        # Atualizar rect imediatamente
+        if self.x < min_x:
+            self.x = float(min_x)
+            self._pendente_x = 0.0
+        elif self.x > max_x:
+            self.x = float(max_x)
+            self._pendente_x = 0.0
+
         self.rect.centerx = int(self.x)
         self.rect.centery = int(self.y)
-        
-        # Iniciar animação de pulo sutil
-        self.movendo = True
-        self.frame_animacao = 0
-        self.tempo_animacao += 0.1  # Para animação contínua (opcional)
+
+        if abs(self._pendente_x) < 1e-3 and abs(self._pendente_y) < 1e-3:
+            self._pendente_x = 0.0
+            self._pendente_y = 0.0
+            self.movendo = False
     
     def atualizar(self, delta_time=1/60):
         """
@@ -167,7 +198,7 @@ class Jogador(pygame.sprite.Sprite):
                 # Voltar à posição normal
                 self.rect.centerx = int(self.x)
                 self.rect.centery = int(self.y)
-                self.movendo = False
+                self.movendo = abs(self._pendente_x) > 1e-3 or abs(self._pendente_y) > 1e-3
                 self.frame_animacao = 0
 
         # Atualizar animação contínua
@@ -182,6 +213,8 @@ class Jogador(pygame.sprite.Sprite):
         self.movendo = False
         self.tempo_animacao = 0.0
         self.frame_animacao = 0
+        self._pendente_x = 0.0
+        self._pendente_y = 0.0
         self.desenhar()
 
     def chegou_ao_topo(self):
