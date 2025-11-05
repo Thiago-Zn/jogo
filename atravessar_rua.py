@@ -51,6 +51,9 @@ class JogoAtraversarRua:
         self.vidas = config.VIDAS_INICIAIS
         self.tempo_inicio = 0
         self.melhor_pontuacao = 0
+        self.paused = False
+        self.pause_inicio = None
+        self.tempo_pausado_acumulado = 0.0
         
         # Sprites
         self.jogador = None
@@ -62,7 +65,7 @@ class JogoAtraversarRua:
         
         # UI
         self.menu = Menu(self.screen, self.font_grande, self.font_media, self.font_pequena)
-        self.hud = HUD(self.screen, self.font_pequena)
+        self.hud = HUD(self.screen, self.font_pequena, self.font_media)
         self.game_over_screen = GameOverScreen(self.screen, self.font_grande, self.font_media, self.font_pequena)
         
         # Sistema de colisão
@@ -84,8 +87,41 @@ class JogoAtraversarRua:
         
         # Grupos de sprites para rio
         self.plataformas_group = pygame.sprite.Group()
-        
+
         # Não inicializar jogo ainda (será inicializado quando começar a jogar)
+
+    def _reset_pause_tracking(self):
+        """Reseta o controle de pausa e cronômetro."""
+        self.paused = False
+        self.pause_inicio = None
+        self.tempo_pausado_acumulado = 0.0
+
+    def alternar_pause(self):
+        """Alterna o estado de pausa durante o jogo."""
+        if self.estado != GameState.PLAYING:
+            return
+
+        if not self.paused:
+            self.paused = True
+            self.pause_inicio = time.time()
+        else:
+            if self.pause_inicio is not None:
+                self.tempo_pausado_acumulado += time.time() - self.pause_inicio
+            self.paused = False
+            self.pause_inicio = None
+
+    def obter_tempo_decorrido(self):
+        """Retorna o tempo decorrido de jogo desconsiderando pausas."""
+        if self.tempo_inicio <= 0:
+            return 0.0
+
+        tempo_atual = time.time()
+        tempo_pausa = self.tempo_pausado_acumulado
+
+        if self.paused and self.pause_inicio is not None:
+            tempo_pausa += tempo_atual - self.pause_inicio
+
+        return max(0.0, tempo_atual - self.tempo_inicio - tempo_pausa)
 
     def alternar_tela_cheia(self):
         """Alterna entre modo janela e tela cheia"""
@@ -108,7 +144,7 @@ class JogoAtraversarRua:
             
             # Recriar UI com nova tela (mantém mesmas dimensões)
             self.menu = Menu(self.screen, self.font_grande, self.font_media, self.font_pequena)
-            self.hud = HUD(self.screen, self.font_pequena)
+            self.hud = HUD(self.screen, self.font_pequena, self.font_media)
             self.game_over_screen = GameOverScreen(self.screen, self.font_grande, self.font_media, self.font_pequena)
 
             # Recriar cache de grid
@@ -127,25 +163,30 @@ class JogoAtraversarRua:
         self.pontuacao = 0
         self.nivel = 1
         self.vidas = config.VIDAS_INICIAIS
-        
+
+        # Novo seed para a próxima sessão
+        self.procedural_generator.definir_seed()
+
         # Inicializar jogo
         self.inicializar_jogo()
-        
+
         # Mudar estado e iniciar tempo
         self.estado = GameState.PLAYING
         self.tempo_inicio = time.time()
+        self._reset_pause_tracking()
 
     def inicializar_jogo(self):
         """Inicializa ou reinicia o jogo (sem resetar pontuação)"""
         # Limpar sprites
         self.carros_group.empty()
         self.plataformas_group.empty()
-        
+
         # Resetar sistemas
         self.camera.resetar()
         self.procedural_generator.resetar()
         self.river_physics.resetar()
-        
+        self._reset_pause_tracking()
+
         # Inicializar mundo procedimental
         self.procedural_generator.inicializar_mundo_inicial()
 
@@ -247,24 +288,32 @@ class JogoAtraversarRua:
         for evento in eventos:
             if evento.type == pygame.QUIT:
                 return False
-            
+
             if evento.type == pygame.KEYDOWN:
                 # F11 para alternar tela cheia
                 if evento.key == pygame.K_F11:
                     self.alternar_tela_cheia()
-                
-                if evento.key == pygame.K_ESCAPE:
+
+                elif evento.key == pygame.K_ESCAPE:
                     if self.estado == GameState.MENU:
                         return False
                     else:
                         self.estado = GameState.MENU
-                
-                if evento.key == pygame.K_SPACE:
+                        self._reset_pause_tracking()
+
+                elif evento.key == pygame.K_SPACE:
                     if self.estado == GameState.MENU:
                         self.iniciar_novo_jogo()
                     elif self.estado == GameState.GAME_OVER:
                         self.iniciar_novo_jogo()
-        
+
+                elif evento.key == pygame.K_p:
+                    self.alternar_pause()
+
+                elif evento.key == pygame.K_r:
+                    if self.estado in (GameState.PLAYING, GameState.GAME_OVER):
+                        self.iniciar_novo_jogo()
+
         # Processar menu se estiver no menu
         if self.estado == GameState.MENU:
             acao = self.menu.processar_eventos(eventos)
@@ -283,9 +332,10 @@ class JogoAtraversarRua:
                 self.iniciar_novo_jogo()
             elif acao == 'menu':
                 self.estado = GameState.MENU
+                self._reset_pause_tracking()
         
         # Processar movimento discreto (grid-based) durante o jogo
-        if self.estado == GameState.PLAYING and self.jogador is not None:
+        if self.estado == GameState.PLAYING and not self.paused and self.jogador is not None:
             for evento in eventos:
                 if evento.type == pygame.KEYDOWN:
                     if evento.key == pygame.K_UP or evento.key == pygame.K_w:
@@ -312,6 +362,8 @@ class JogoAtraversarRua:
     def atualizar(self):
         """Atualiza a lógica do jogo"""
         if self.estado == GameState.PLAYING:
+            if self.paused:
+                return
             # Atualizar jogador (animação) com delta time
             if self.jogador:
                 self.jogador.atualizar(self.delta_time)
@@ -363,6 +415,8 @@ class JogoAtraversarRua:
 
                 if self.vidas <= 0:
                     self.estado = GameState.GAME_OVER
+                    self.paused = False
+                    self.pause_inicio = None
                     if self.pontuacao > self.melhor_pontuacao:
                         self.melhor_pontuacao = self.pontuacao
             
@@ -393,6 +447,8 @@ class JogoAtraversarRua:
 
             if self.vidas <= 0:
                 self.estado = GameState.GAME_OVER
+                self.paused = False
+                self.pause_inicio = None
                 if self.pontuacao > self.melhor_pontuacao:
                     self.melhor_pontuacao = self.pontuacao
 
@@ -506,6 +562,7 @@ class JogoAtraversarRua:
 
     def desenhar(self):
         """Renderiza a tela"""
+        estado_label = self.estado.value.replace('_', ' ') if hasattr(self.estado, 'value') else str(self.estado)
         if self.estado == GameState.MENU:
             self.menu.desenhar(self.melhor_pontuacao)
         elif self.estado == GameState.PLAYING:
@@ -540,8 +597,23 @@ class JogoAtraversarRua:
                     self.screen.blit(self.jogador.image, rect_tela)
 
             # Desenha HUD (sempre no topo)
-            tempo_decorrido = time.time() - self.tempo_inicio if self.tempo_inicio > 0 else 0
-            self.hud.desenhar(self.pontuacao, self.nivel, self.vidas, tempo_decorrido)
+            tempo_decorrido = self.obter_tempo_decorrido()
+            self.hud.desenhar(
+                self.pontuacao,
+                self.nivel,
+                self.vidas,
+                tempo_decorrido,
+                melhor_pontuacao=self.melhor_pontuacao,
+                seed=getattr(self.procedural_generator, 'seed', None),
+                dificuldade=getattr(self.procedural_generator, 'dificuldade_atual', 1.0),
+                distancia=getattr(self.procedural_generator, 'distancia_percorrida', 0.0),
+                camera_offset=self.camera.offset_y,
+                pausado=self.paused,
+                fps=self.clock.get_fps(),
+                safe_zone=self.jogador_em_safe_zone,
+                invulneravel=self.invulneravel,
+                estado_texto=estado_label,
+            )
             
         elif self.estado == GameState.GAME_OVER:
             self.desenhar_fundo()
@@ -569,8 +641,23 @@ class JogoAtraversarRua:
                 self.screen.blit(self.jogador.image, rect_tela)
             
             # HUD
-            tempo_decorrido = time.time() - self.tempo_inicio if self.tempo_inicio > 0 else 0
-            self.hud.desenhar(self.pontuacao, self.nivel, self.vidas, tempo_decorrido)
+            tempo_decorrido = self.obter_tempo_decorrido()
+            self.hud.desenhar(
+                self.pontuacao,
+                self.nivel,
+                self.vidas,
+                tempo_decorrido,
+                melhor_pontuacao=self.melhor_pontuacao,
+                seed=getattr(self.procedural_generator, 'seed', None),
+                dificuldade=getattr(self.procedural_generator, 'dificuldade_atual', 1.0),
+                distancia=getattr(self.procedural_generator, 'distancia_percorrida', 0.0),
+                camera_offset=self.camera.offset_y,
+                pausado=False,
+                fps=self.clock.get_fps(),
+                safe_zone=self.jogador_em_safe_zone,
+                invulneravel=self.invulneravel,
+                estado_texto=estado_label,
+            )
             # Desenha tela de game over
             self.game_over_screen.desenhar(self.pontuacao, self.nivel)
 
@@ -585,13 +672,18 @@ class JogoAtraversarRua:
             rodando = self.processar_eventos()
 
             # Atualizar lógica
-            self.atualizar()
+            if not (self.estado == GameState.PLAYING and self.paused):
+                self.atualizar()
 
             # Desenhar
             self.desenhar()
 
             # Controlar FPS e calcular delta time
-            self.delta_time = self.clock.tick(config.FPS) / 1000.0  # Converter ms para segundos
+            frame_time = self.clock.tick(config.FPS) / 1000.0  # Converter ms para segundos
+            if self.estado == GameState.PLAYING and self.paused:
+                self.delta_time = 0.0
+            else:
+                self.delta_time = frame_time
 
         pygame.quit()
         sys.exit()

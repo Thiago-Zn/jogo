@@ -44,8 +44,7 @@ class ProceduralGenerator:
         Args:
             seed: Seed para geração aleatória (opcional)
         """
-        if seed:
-            random.seed(seed)
+        self.definir_seed(seed)
 
         # Lista de chunks ativos
         self.chunks = []
@@ -65,6 +64,15 @@ class ProceduralGenerator:
         self.chunk_pool = []
         self.max_pool_size = 50
         
+    def definir_seed(self, seed=None):
+        """Define a seed utilizada pela geração procedimental."""
+        if seed is None:
+            seed = random.SystemRandom().randrange(0, 2 ** 32 - 1)
+
+        self.seed = seed
+        random.seed(self.seed)
+        return self.seed
+
     def deve_gerar_area_descanso(self):
         """
         Verifica se deve gerar uma área de descanso
@@ -644,6 +652,8 @@ class ProceduralGenerator:
     
     def resetar(self):
         """Reseta o gerador para estado inicial"""
+        if getattr(self, 'seed', None) is not None:
+            random.seed(self.seed)
         self.chunks = []
         self.safe_zones = []
         self.proximo_y = 0
