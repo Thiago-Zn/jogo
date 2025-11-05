@@ -55,21 +55,21 @@ class SafeZone:
         jogador_y = jogador.rect.centery
         return self.esta_dentro(jogador_y)
     
-    def renderizar(self, surface, camera_offset=0):
+    def renderizar(self, surface, camera, interpolation=1.0):
         """
         Desenha a área de descanso na tela
-        
+
         Args:
             surface: Surface do pygame onde desenhar
-            camera_offset: Offset da câmera para scroll (padrão: 0)
+            camera: Instância da câmera para transformar coordenadas
+            interpolation: Fator de interpolação entre atualizações de física
         """
-        # Posição na tela considerando o offset da câmera
-        y_tela = self.y_pos - camera_offset
-        
+        _, y_tela = camera.world_to_screen((0, self.y_pos), interpolation)
+
         # Não renderizar se estiver fora da tela
-        if y_tela + self.altura < 0 or y_tela > config.ALTURA_TELA:
+        if y_tela + self.altura < 0 or y_tela > camera.viewport_rect.height:
             return
-        
+
         # Desenhar fundo principal da área de descanso - MAIS VISÍVEL
         pygame.draw.rect(
             surface,
@@ -96,7 +96,7 @@ class SafeZone:
         
         # Adicionar textura de grama (pequenos detalhes)
         self._desenhar_textura_grama(surface, y_tela)
-        
+
         # Adicionar bordas sutis para indicar zona segura
         self._desenhar_bordas(surface, y_tela)
     
