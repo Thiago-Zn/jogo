@@ -132,9 +132,9 @@ class ProceduralGenerator:
             y_faixa = y_pos + (i * altura_faixa)
             velocidade_base = random.uniform(2.0, 4.5)
             direcao = random.choice([1, -1])
-            
+
             # Aplicar dificuldade
-            velocidade = velocidade_base * self.dificuldade_atual
+            velocidade = velocidade_base * self.dificuldade_atual * config.FPS
             
             faixas.append({
                 'y': y_faixa,
@@ -183,9 +183,9 @@ class ProceduralGenerator:
             y_faixa = y_pos + (i * altura_faixa)
             velocidade_base = random.uniform(1.5, 3.5)
             direcao = random.choice([1, -1])
-            
+
             # Aplicar dificuldade
-            velocidade = velocidade_base * self.dificuldade_atual
+            velocidade = velocidade_base * self.dificuldade_atual * config.FPS
             
             faixas_rio.append({
                 'y': y_faixa,
@@ -400,7 +400,7 @@ class ProceduralGenerator:
                     y_faixa = y_inicio + (i * 60)
                     velocidade_base = random.uniform(2.0, 4.5)
                     direcao = random.choice([1, -1])
-                    velocidade = velocidade_base * self.dificuldade_atual
+                    velocidade = velocidade_base * self.dificuldade_atual * config.FPS
                     
                     faixas.append({
                         'y': y_faixa,
@@ -435,7 +435,7 @@ class ProceduralGenerator:
                     y_faixa = y_inicio + (i * 60)
                     velocidade_base = random.uniform(1.5, 3.5)
                     direcao = random.choice([1, -1])
-                    velocidade = velocidade_base * self.dificuldade_atual
+                    velocidade = velocidade_base * self.dificuldade_atual * config.FPS
                     
                     faixas_rio.append({
                         'y': y_faixa,

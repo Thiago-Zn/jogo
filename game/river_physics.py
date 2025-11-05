@@ -66,7 +66,7 @@ class RiverPhysics:
         self.jogador_na_agua = False
         return False
     
-    def aplicar_movimento_plataforma(self, jogador, plataformas, delta_time=1/60):
+    def aplicar_movimento_plataforma(self, jogador, plataformas, delta_time):
         """
         Move o jogador junto com a plataforma se estiver em cima de uma
 
@@ -84,8 +84,7 @@ class RiverPhysics:
             # Mover jogador com o tronco - MOVIMENTO FLUIDO E SINCRONIZADO
             if hasattr(plataforma, 'velocidade'):
                 # Mover posição X do jogador junto com o tronco (movimento livre em pixels)
-                # Movimento baseado em velocidade em pixels por segundo
-                movimento = plataforma.velocidade * plataforma.direcao * 60 * delta_time
+                movimento = plataforma.velocidade * plataforma.direcao * delta_time
                 jogador.x += movimento
 
                 # Atualizar rect visual
@@ -107,7 +106,7 @@ class RiverPhysics:
         if not self.jogador_em_plataforma:
             self.plataforma_atual = None
     
-    def atualizar(self, jogador, chunks_rio, delta_time=1/60):
+    def atualizar(self, jogador, chunks_rio, delta_time):
         """
         Atualiza a física do rio para o jogador
 

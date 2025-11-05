@@ -26,7 +26,9 @@ TITULO = "🐸 Atravessar a Rua v3.0 - Frogger Infinito"
 
 # ==================== CONFIGURAÇÕES DO JOGO ====================
 FPS = 60
-VELOCIDADE_JOGADOR = 32  # Velocidade em pixels por frame (1 célula por frame = movimento fluido)
+# Velocidade do jogador expressa em pixels por segundo. Mantém o salto de
+# uma célula por comando com o passo de física fixo.
+VELOCIDADE_JOGADOR = TAMANHO_CELL * FPS
 
 # ==================== SISTEMA DE GRID/TABULEIRO MODERNO ====================
 # Tile size de 32px é padrão para jogos pixel art modernos

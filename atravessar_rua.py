@@ -13,6 +13,7 @@ import sys
 import time
 
 import config
+from core.clock import FixedStepClock
 from entities import Jogador, Carro, SafeZone, Tronco
 from game import GameState, CollisionSystem, Camera, ProceduralGenerator, RiverPhysics
 from ui import Menu, HUD, GameOverScreen
@@ -27,8 +28,8 @@ class JogoAtraversarRua:
             self.tela_cheia = False
             self.screen = pygame.display.set_mode((config.LARGURA_TELA, config.ALTURA_TELA))
             pygame.display.set_caption(config.TITULO)
-            self.clock = pygame.time.Clock()
-            self.delta_time = 0.0  # Delta time para física frame-independent
+            self.render_clock = pygame.time.Clock()
+            self.fixed_clock = FixedStepClock()
         except Exception as e:
             raise RuntimeError(f"Falha ao criar janela do jogo: {e}")
         
@@ -130,6 +131,7 @@ class JogoAtraversarRua:
         
         # Inicializar jogo
         self.inicializar_jogo()
+        self.fixed_clock.reset()
         
         # Mudar estado e iniciar tempo
         self.estado = GameState.PLAYING
@@ -160,6 +162,7 @@ class JogoAtraversarRua:
         self.camera.update(self.jogador)
 
         # Não criar carros estáticos mais - serão gerados proceduralmente
+        self.fixed_clock.reset()
 
     def atualizar_carros_procedurais(self):
         """Atualiza carros baseados nas faixas geradas proceduralmente"""
@@ -207,7 +210,7 @@ class JogoAtraversarRua:
             if carro.rect.centery < y_min - 100 or carro.rect.centery > y_max + 100:
                 carro.kill()
     
-    def verificar_safe_zone(self):
+    def verificar_safe_zone(self, delta_time):
         """Verifica se o jogador está em uma área de descanso"""
         if self.jogador is None:
             return
@@ -224,7 +227,7 @@ class JogoAtraversarRua:
 
         # Sistema de safe zone - recuperar vida se ficar tempo suficiente
         if self.jogador_em_safe_zone:
-            self.tempo_em_safe_zone += self.delta_time
+            self.tempo_em_safe_zone += delta_time
             # A cada 5 segundos em safe zone, recupera 1 vida (máximo de VIDAS_MAXIMAS)
             if self.tempo_em_safe_zone >= 5.0 and self.vidas < config.VIDAS_MAXIMAS:
                 self.vidas += 1
@@ -309,70 +312,60 @@ class JogoAtraversarRua:
         for plataforma in plataformas_visiveis:
             self.plataformas_group.add(plataforma)
 
-    def atualizar(self):
-        """Atualiza a lógica do jogo"""
-        if self.estado == GameState.PLAYING:
-            # Atualizar jogador (animação) com delta time
-            if self.jogador:
-                self.jogador.atualizar(self.delta_time)
-            
-            # Atualizar câmera com delta time
-            self.camera.update(self.jogador, self.delta_time)
-            
-            # Atualizar geração procedimental (CRÍTICO para mundo infinito)
-            self.procedural_generator.atualizar(self.camera.offset_y)
-            
-            # Atualizar pontuação baseada em progresso (distância percorrida)
-            distancia = int(self.procedural_generator.distancia_percorrida / 10)
-            if distancia > self.pontuacao:
-                self.pontuacao = distancia
-            
-            # Atualizar carros baseados nas faixas geradas
-            self.atualizar_carros_procedurais()
-            
-            # Atualizar plataformas baseadas nos chunks de rio
-            self.atualizar_plataformas_procedurais()
-            
-            # Atualizar carros existentes com delta time
-            for carro in self.carros_group:
-                carro.atualizar(self.delta_time)
+    def step_physics(self, delta_time):
+        """Executa uma etapa fixa de física e lógica do jogo."""
+        if self.estado != GameState.PLAYING:
+            return
 
-            # Atualizar plataformas existentes com delta time
-            for plataforma in self.plataformas_group:
-                plataforma.atualizar(self.delta_time)
-            
-            # Verificar física do rio - TODOS os chunks de rio, não apenas visíveis
+        if self.jogador:
+            self.jogador.step(delta_time)
+            self.jogador.atualizar(delta_time)
+
+        self.camera.update(self.jogador, delta_time)
+
+        self.procedural_generator.atualizar(self.camera.offset_y)
+
+        distancia = int(self.procedural_generator.distancia_percorrida / 10)
+        if distancia > self.pontuacao:
+            self.pontuacao = distancia
+
+        self.atualizar_carros_procedurais()
+        self.atualizar_plataformas_procedurais()
+
+        for carro in self.carros_group:
+            carro.atualizar(delta_time)
+
+        for plataforma in self.plataformas_group:
+            plataforma.atualizar(delta_time)
+
+        status_rio = {'afogando': False, 'em_plataforma': False, 'plataforma': None}
+        if self.jogador:
             chunks_rio = [c for c in self.procedural_generator.chunks if c.tipo == 'rio']
-            status_rio = self.river_physics.atualizar(self.jogador, chunks_rio, self.delta_time)
-            
-            # Atualizar sistema de invulnerabilidade
-            if self.invulneravel:
-                self.tempo_invulnerabilidade += self.delta_time
-                if self.tempo_invulnerabilidade >= self.duracao_invulnerabilidade:
-                    self.invulneravel = False
-                    self.tempo_invulnerabilidade = 0.0
+            status_rio = self.river_physics.atualizar(self.jogador, chunks_rio, delta_time)
 
-            # Verificar se jogador está afogando (apenas se não estiver invulnerável)
-            if status_rio['afogando'] and not self.invulneravel:
-                self.vidas -= 1
-                self.jogador.resetar_posicao()
-
-                # Ativar invulnerabilidade
-                self.invulneravel = True
+        if self.invulneravel:
+            self.tempo_invulnerabilidade += delta_time
+            if self.tempo_invulnerabilidade >= self.duracao_invulnerabilidade:
+                self.invulneravel = False
                 self.tempo_invulnerabilidade = 0.0
 
-                if self.vidas <= 0:
-                    self.estado = GameState.GAME_OVER
-                    if self.pontuacao > self.melhor_pontuacao:
-                        self.melhor_pontuacao = self.pontuacao
-            
-            # Verificar se jogador está em área de descanso
-            self.verificar_safe_zone()
-            
-            # Verificar colisões
-            self.verificar_colisoes()
-            
-            # Verificar vitória desabilitada - modo infinito ativo
+        if status_rio['afogando'] and not self.invulneravel:
+            self.vidas -= 1
+            if self.jogador:
+                self.jogador.resetar_posicao()
+
+            self.invulneravel = True
+            self.tempo_invulnerabilidade = 0.0
+
+            if self.vidas <= 0:
+                self.estado = GameState.GAME_OVER
+                if self.pontuacao > self.melhor_pontuacao:
+                    self.melhor_pontuacao = self.pontuacao
+
+        if self.jogador:
+            self.verificar_safe_zone(delta_time)
+
+        self.verificar_colisoes()
 
     def verificar_colisoes(self):
         """Verifica colisões entre jogador e carros"""
@@ -504,8 +497,8 @@ class JogoAtraversarRua:
                 # Água simples sem linhas horríveis - apenas cor sólida
                 # Sem efeitos desnecessários
 
-    def desenhar(self):
-        """Renderiza a tela"""
+    def desenhar(self, interpolation=0.0):
+        """Renderiza a tela."""
         if self.estado == GameState.MENU:
             self.menu.desenhar(self.melhor_pontuacao)
         elif self.estado == GameState.PLAYING:
@@ -584,14 +577,17 @@ class JogoAtraversarRua:
             # Processar eventos
             rodando = self.processar_eventos()
 
-            # Atualizar lógica
-            self.atualizar()
+            if not rodando:
+                break
+
+            # Atualizar lógica em passos fixos
+            interpolation = self.fixed_clock.step(self.step_physics)
 
             # Desenhar
-            self.desenhar()
+            self.desenhar(interpolation)
 
-            # Controlar FPS e calcular delta time
-            self.delta_time = self.clock.tick(config.FPS) / 1000.0  # Converter ms para segundos
+            # Controlar FPS de renderização
+            self.render_clock.tick(config.FPS)
 
         pygame.quit()
         sys.exit()
