@@ -4,6 +4,7 @@ Sistema de Botões Clicáveis
 
 import pygame
 import config
+from core.assets import load_font
 
 
 class Button:
@@ -48,7 +49,7 @@ class Button:
         )
         
         # Fonte
-        self.fonte = pygame.font.Font(None, 36)
+        self.fonte, _ = load_font(None, 36)
         
         # Animação
         self.escala = 1.0

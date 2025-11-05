@@ -1,99 +1,98 @@
-"""
-Classe do jogador (sapo)
-"""
+"""Classe do jogador (sapo)."""
 
 import pygame
+
 import config
+from core.assets import load_image
+
+JOGADOR_IMAGE_PATH = "images/jogador.png"
 
 
 class Jogador(pygame.sprite.Sprite):
-    """Classe que representa o personagem controlado pelo jogador"""
+    """Classe que representa o personagem controlado pelo jogador."""
 
     def __init__(self, x, y):
         super().__init__()
-        
-        # Criar surface para o sprite
-        self.image = pygame.Surface((config.TAMANHO_JOGADOR, config.TAMANHO_JOGADOR), pygame.SRCALPHA)
-        self.rect = self.image.get_rect()
-        
+
         # Posição inicial (em coordenadas do mundo) - snap ao grid apenas uma vez na inicialização
         self.pos_inicial_x, self.pos_inicial_y = self._snap_ao_grid(x, y)
-        
+
         # Posição atual em coordenadas do MUNDO (pixels livres, sem grid restritivo)
         self.x = float(self.pos_inicial_x)
         self.y = float(self.pos_inicial_y)
-        
-        # Atualizar rect imediatamente
-        self.rect.centerx = int(self.x)
-        self.rect.centery = int(self.y)
-        
+
         # Animação e efeitos visuais
         self.angulo = 0
         self.tempo_animacao = 0.0  # Para animação contínua
-        
+
         # Estado de movimento (para permitir input durante movimento)
         self.movendo = False
         self.frame_animacao = 0  # Contador de frames para animação de pulo
         self.velocidade = config.VELOCIDADE_JOGADOR  # Pixels por frame
-        
-        # Desenhar o sprite inicial
-        self.desenhar()
+
+        self.image, self._usando_substituto = load_image(
+            JOGADOR_IMAGE_PATH,
+            size=(config.TAMANHO_JOGADOR, config.TAMANHO_JOGADOR),
+            fallback_draw=self._desenhar_no_surface,
+        )
+        self.rect = self.image.get_rect()
+
+        # Atualizar rect imediatamente
+        self.rect.centerx = int(self.x)
+        self.rect.centery = int(self.y)
 
     def desenhar(self):
-        """Desenha o sapo com pixel art profissional - AJUSTADO PARA 32x32"""
-        self.image.fill((0, 0, 0, 0))  # Transparente
-        
+        """Redesenha o sprite apenas quando usamos o fallback gerado."""
+        if self._usando_substituto:
+            self._desenhar_no_surface(self.image)
+
+    def _desenhar_no_surface(self, surface):
+        """Desenha o sapo com pixel art profissional - AJUSTADO PARA 32x32."""
+        surface.fill((0, 0, 0, 0))  # Transparente
+
         # CORES PROFISSIONAIS
-        verde_base = (76, 153, 0)      # Verde vibrante
-        verde_claro = (102, 204, 0)    # Highlight
-        verde_escuro = (51, 102, 0)    # Shadow
-        verde_medio = (64, 128, 0)     # Meio-tom
-        
+        verde_base = (76, 153, 0)  # Verde vibrante
+        verde_claro = (102, 204, 0)  # Highlight
+        verde_escuro = (51, 102, 0)  # Shadow
+        verde_medio = (64, 128, 0)  # Meio-tom
+
         # === CORPO PRINCIPAL (32x32) ===
-        # Sombra/camada escura
-        pygame.draw.ellipse(self.image, verde_escuro, (4, 10, 24, 18))
-        # Corpo base
-        pygame.draw.ellipse(self.image, verde_base, (3, 9, 26, 20))
-        # Highlight superior
-        pygame.draw.ellipse(self.image, verde_claro, (5, 11, 22, 12))
-        # Meio-tom para profundidade
-        pygame.draw.ellipse(self.image, verde_medio, (6, 12, 20, 10))
-        
+        pygame.draw.ellipse(surface, verde_escuro, (4, 10, 24, 18))
+        pygame.draw.ellipse(surface, verde_base, (3, 9, 26, 20))
+        pygame.draw.ellipse(surface, verde_claro, (5, 11, 22, 12))
+        pygame.draw.ellipse(surface, verde_medio, (6, 12, 20, 10))
+
         # === PERNAS TRASEIRAS ===
-        pygame.draw.ellipse(self.image, verde_escuro, (1, 20, 10, 10))
-        pygame.draw.ellipse(self.image, verde_escuro, (21, 20, 10, 10))
-        pygame.draw.ellipse(self.image, verde_base, (2, 19, 10, 10))
-        pygame.draw.ellipse(self.image, verde_base, (20, 19, 10, 10))
-        pygame.draw.ellipse(self.image, verde_claro, (3, 21, 6, 6))
-        pygame.draw.ellipse(self.image, verde_claro, (22, 21, 6, 6))
-        
+        pygame.draw.ellipse(surface, verde_escuro, (1, 20, 10, 10))
+        pygame.draw.ellipse(surface, verde_escuro, (21, 20, 10, 10))
+        pygame.draw.ellipse(surface, verde_base, (2, 19, 10, 10))
+        pygame.draw.ellipse(surface, verde_base, (20, 19, 10, 10))
+        pygame.draw.ellipse(surface, verde_claro, (3, 21, 6, 6))
+        pygame.draw.ellipse(surface, verde_claro, (22, 21, 6, 6))
+
         # === PERNAS DIANTEIRAS ===
-        pygame.draw.ellipse(self.image, verde_base, (4, 12, 8, 6))
-        pygame.draw.ellipse(self.image, verde_base, (20, 12, 8, 6))
-        pygame.draw.ellipse(self.image, verde_escuro, (5, 13, 6, 4))
-        pygame.draw.ellipse(self.image, verde_escuro, (21, 13, 6, 4))
-        
+        pygame.draw.ellipse(surface, verde_base, (4, 12, 8, 6))
+        pygame.draw.ellipse(surface, verde_base, (20, 12, 8, 6))
+        pygame.draw.ellipse(surface, verde_escuro, (5, 13, 6, 4))
+        pygame.draw.ellipse(surface, verde_escuro, (21, 13, 6, 4))
+
         # === OLHOS PROFISSIONAIS (ajustados para 32x32) ===
-        # Olhos - fundo branco
-        pygame.draw.circle(self.image, (255, 255, 255), (12, 12), 6)
-        pygame.draw.circle(self.image, (255, 255, 255), (20, 12), 6)
-        # Borda externa dos olhos
-        pygame.draw.circle(self.image, (0, 0, 0), (12, 12), 6, 1)
-        pygame.draw.circle(self.image, (0, 0, 0), (20, 12), 6, 1)
-        # Pupilas
-        pygame.draw.circle(self.image, (0, 0, 0), (12, 12), 4)
-        pygame.draw.circle(self.image, (0, 0, 0), (20, 12), 4)
-        # Brilho nos olhos (reflexo)
-        pygame.draw.circle(self.image, (255, 255, 255), (11, 11), 2)
-        pygame.draw.circle(self.image, (255, 255, 255), (19, 11), 2)
-        
+        pygame.draw.circle(surface, (255, 255, 255), (12, 12), 6)
+        pygame.draw.circle(surface, (255, 255, 255), (20, 12), 6)
+        pygame.draw.circle(surface, (0, 0, 0), (12, 12), 6, 1)
+        pygame.draw.circle(surface, (0, 0, 0), (20, 12), 6, 1)
+        pygame.draw.circle(surface, (0, 0, 0), (12, 12), 4)
+        pygame.draw.circle(surface, (0, 0, 0), (20, 12), 4)
+        pygame.draw.circle(surface, (255, 255, 255), (11, 11), 2)
+        pygame.draw.circle(surface, (255, 255, 255), (19, 11), 2)
+
         # === BOCA ===
-        pygame.draw.arc(self.image, (0, 0, 0), (10, 18, 12, 6), 0, 3.14, 1)
-        
+        pygame.draw.arc(surface, (0, 0, 0), (10, 18, 12, 6), 0, 3.14, 1)
+
         # === MANCHAS/PELE ===
-        pygame.draw.circle(self.image, verde_escuro, (9, 16), 1)
-        pygame.draw.circle(self.image, verde_escuro, (23, 16), 1)
-        pygame.draw.circle(self.image, verde_escuro, (16, 19), 2)
+        pygame.draw.circle(surface, verde_escuro, (9, 16), 1)
+        pygame.draw.circle(surface, verde_escuro, (23, 16), 1)
+        pygame.draw.circle(surface, verde_escuro, (16, 19), 2)
 
     def _snap_ao_grid(self, x, y):
         """Snap posição ao grid - usado APENAS para inicialização e reset"""
