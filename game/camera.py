@@ -14,46 +14,50 @@ class Camera:
         self.offset_y = 0  # Offset vertical da câmera
         self.velocidade_scroll = config.VELOCIDADE_SCROLL
         self.scroll_ativo = False
-        
+
         # Limites de scroll
         self.limite_superior = 0
         self.limite_inferior = None  # Infinito
-        
-        # Para scroll suave com interpolação
+
+        # Para scroll suave com interpolação (frame-independent)
         self.target_offset = 0
-        self.suavidade = 0.12  # Velocidade de interpolação (lerp) - mais suave
+        self.suavidade = 7.0  # Velocidade de interpolação ajustada para delta time
         
         # Posição do jogador (para acompanhamento)
         self.jogador_y = 0
         
     def update(self, jogador=None, delta_time=1/60):
         """
-        Atualiza a posição da câmera com INTERPOLAÇÃO SUAVE
+        Atualiza a posição da câmera com INTERPOLAÇÃO SUAVE frame-independent
         Segue a posição Y do jogador (movimento livre em pixels) para movimento fluido
+
+        Args:
+            jogador: Objeto do jogador
+            delta_time: Tempo desde o último frame (em segundos)
         """
         if jogador and hasattr(jogador, 'y'):
             # Usar posição Y direta do jogador (movimento livre em pixels)
             posicao_tela_jogador = config.ALTURA_TELA - (config.TAMANHO_CELL * 5)  # 5 células do fundo (160px)
-            
+
             # Calcular offset baseado na posição Y do jogador (coordenadas do mundo)
             y_mundo_jogador = jogador.y
-            
+
             # Offset necessário para mostrar o jogador na posição desejada
             novo_target = y_mundo_jogador - posicao_tela_jogador
-            
+
             # Atualizar target (sempre atualizar para movimento suave)
             self.target_offset = novo_target
-        
-        # INTERPOLAÇÃO SUAVE (LERP) - movimento fluido da câmera
-        # Fórmula: pos = pos + (target - pos) * velocidade
+
+        # INTERPOLAÇÃO SUAVE (LERP) frame-independent
+        # Fórmula: pos = pos + (target - pos) * (velocidade * delta_time)
         diferenca = self.target_offset - self.offset_y
-        
+
         # Se estiver muito perto, snap final
         if abs(diferenca) < 0.5:
             self.offset_y = self.target_offset
         else:
-            # Interpolação suave
-            self.offset_y += diferenca * self.suavidade
+            # Interpolação suave com delta time
+            self.offset_y += diferenca * self.suavidade * delta_time
         
         # Aplicar limites (não pode voltar para baixo)
         if self.limite_superior is not None:

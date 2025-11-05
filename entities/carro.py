@@ -108,8 +108,18 @@ class Carro(pygame.sprite.Sprite):
         pygame.draw.line(self.image, (200, 200, 200), (4, 12), (60, 12), 1)
 
     def update(self):
-        """Atualiza a posição do carro"""
-        self.rect.centerx += int(self.velocidade * self.direcao)
+        """Atualiza a posição do carro (método compatível com sprite.Group.update())"""
+        self.atualizar(1/60)
+
+    def atualizar(self, delta_time=1/60):
+        """
+        Atualiza a posição do carro com delta time para física frame-independent
+
+        Args:
+            delta_time: Tempo desde o último frame (em segundos)
+        """
+        # Movimento baseado em velocidade em pixels por segundo
+        self.rect.centerx += int(self.velocidade * self.direcao * 60 * delta_time)
 
         # Reposiciona quando sai da tela
         if self.direcao == 1 and self.rect.left > config.LARGURA_TELA:
